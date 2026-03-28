@@ -52,47 +52,182 @@ jobs:
           fi
         shell: bash
 
-      - name: Build and sign app
-        if: runner.os == 'macOS'
+      # macOS 签名和打包
+      - name: Sign and repackage macOS app
+        if: runner.os == 'macOS' && steps.build.outputs.status == 'success'
         run: |
-          # 查找 .app
-          APP_PATH=$(find out -name "*.app" -type d | head -1)
+          # 查找原始 zip 文件
+          ZIP_PATH=$(find out/make -name "*.zip" -type f | head -1)
+          if [ -z "$ZIP_PATH" ]; then
+            echo "❌ No zip file found"
+            exit 1
+          fi
+          
+          echo "📦 Found zip: $ZIP_PATH"
+          
+          # 创建临时目录
+          TEMP_DIR=$(mktemp -d)
+          echo "📁 Temp directory: $TEMP_DIR"
+          
+          # 解压 zip 文件
+          echo "📂 Extracting zip..."
+          unzip -q "$ZIP_PATH" -d "$TEMP_DIR"
+          
+          # 查找 .app 文件
+          APP_PATH=$(find "$TEMP_DIR" -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ No .app file found"
+            exit 1
+          fi
+          
           APP_NAME=$(basename "$APP_PATH")
-
-          echo "📦 Found: $APP_PATH"
-
+          echo "🎯 Found app: $APP_PATH"
+          
           # 1. 修复权限
           echo "🔧 Fixing permissions..."
           chmod -R 755 "$APP_PATH"
-
-          # 2. 移除 quarantine 属性（如果有）
+          
+          # 2. 移除 quarantine 属性
           echo "🔧 Removing quarantine attributes..."
           xattr -d com.apple.quarantine "$APP_PATH" 2>/dev/null || true
-
-          # 3. 执行 ad-hoc 签名
+          
+          # 3. 清除现有签名（如果有）
+          echo "🔧 Clearing existing signatures..."
+          codesign --remove-signature "$APP_PATH" 2>/dev/null || true
+          
+          # 4. 执行 ad-hoc 签名
           echo "🔏 Signing with ad-hoc signature..."
           codesign --force --deep --sign - "$APP_PATH"
-
-          # 4. 验证签名
+          
+          # 5. 验证签名
           echo "✅ Verifying signature..."
           codesign --verify --verbose "$APP_PATH"
+          
+          # 6. 重新打包成 zip
+          echo "📦 Repackaging signed app..."
+          cd "$TEMP_DIR"
+          SIGNED_ZIP_NAME="FastLauncher-darwin-arm64-signed.zip"
+          zip -r -q "$SIGNED_ZIP_NAME" "$APP_NAME"
+          
+          # 7. 创建输出目录并移动文件
+          mkdir -p "$GITHUB_WORKSPACE/signed_output"
+          mv "$SIGNED_ZIP_NAME" "$GITHUB_WORKSPACE/signed_output/"
+          
+          # 8. 清理临时目录
+          cd "$GITHUB_WORKSPACE"
+          rm -rf "$TEMP_DIR"
+          
+          echo "✅ Signed app repackaged successfully!"
+          ls -la "$GITHUB_WORKSPACE/signed_output/"
+          
+          # 设置输出路径
+          echo "signed_zip_path=$GITHUB_WORKSPACE/signed_output/$SIGNED_ZIP_NAME" >> $GITHUB_OUTPUT
 
-          echo "✅ Build complete!"
+      # Windows 打包
+      - name: Package Windows executable
+        if: runner.os == 'Windows' && steps.build.outputs.status == 'success'
+        shell: pwsh
+        run: |
+          # 查找 .exe 文件
+          Write-Host "🔍 Searching for .exe files..."
+          $exeFiles = Get-ChildItem -Path "out\make" -Recurse -Filter "*.exe" | Where-Object { $_.FullName -notlike "*\node_modules\*" }
+          
+          if ($exeFiles.Count -eq 0) {
+            Write-Host "❌ No .exe files found"
+            exit 1
+          }
+          
+          Write-Host "📦 Found $($exeFiles.Count) .exe file(s):"
+          $exeFiles | ForEach-Object { Write-Host "  - $($_.FullName)" }
+          
+          # 创建打包目录
+          $packageDir = "$env:GITHUB_WORKSPACE\windows_package"
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+          
+          # 获取主 .exe 文件（通常是最大的那个或根目录的）
+          $mainExe = $exeFiles | Sort-Object Length -Descending | Select-Object -First 1
+          $exeName = [System.IO.Path]::GetFileName($mainExe.FullName)
+          $exeDir = [System.IO.Path]::GetDirectoryName($mainExe.FullName)
+          
+          Write-Host "🎯 Main executable: $($mainExe.FullName)"
+          
+          # 复制 .exe 文件及其依赖
+          Write-Host "📋 Copying executable and dependencies..."
+          
+          # 复制主 exe 文件
+          Copy-Item -Path $mainExe.FullName -Destination "$packageDir\" -Force
+          
+          # 复制同一目录下的所有 .dll 和 .pdb 文件
+          Get-ChildItem -Path $exeDir -Filter "*.dll" | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination "$packageDir\" -Force
+            Write-Host "  Copied DLL: $($_.Name)"
+          }
+          
+          Get-ChildItem -Path $exeDir -Filter "*.pdb" | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination "$packageDir\" -Force
+            Write-Host "  Copied PDB: $($_.Name)"
+          }
+          
+          # 复制 resources 文件夹（如果存在）
+          $resourcesDir = Join-Path $exeDir "resources"
+          if (Test-Path $resourcesDir) {
+            Write-Host "📁 Copying resources folder..."
+            Copy-Item -Path $resourcesDir -Destination "$packageDir\" -Recurse -Force
+          }
+          
+          # 复制 locales 文件夹（如果存在）
+          $localesDir = Join-Path $exeDir "locales"
+          if (Test-Path $localesDir) {
+            Write-Host "🌐 Copying locales folder..."
+            Copy-Item -Path $localesDir -Destination "$packageDir\" -Recurse -Force
+          }
+          
+          # 创建 zip 包
+          Write-Host "📦 Creating zip archive..."
+          $zipName = "FastLauncher-windows-$env:PLATFORM.zip"
+          if ($env:PLATFORM -eq "x64") {
+            $zipName = "FastLauncher-windows-x64.zip"
+          } elseif ($env:PLATFORM -eq "x86") {
+            $zipName = "FastLauncher-windows-x86.zip"
+          } else {
+            $zipName = "FastLauncher-windows.zip"
+          }
+          
+          $zipPath = "$env:GITHUB_WORKSPACE\$zipName"
+          Compress-Archive -Path "$packageDir\*" -DestinationPath $zipPath -Force
+          
+          Write-Host "✅ Package created: $zipName"
+          Write-Host "📊 Package size: $([math]::Round((Get-Item $zipPath).Length / 1MB, 2)) MB"
+          
+          # 列出打包内容
+          Write-Host "`n📋 Package contents:"
+          Get-ChildItem -Path $packageDir | ForEach-Object { Write-Host "  - $($_.Name)" }
+          
+          # 设置输出变量
+          echo "package_path=$zipPath" >> $env:GITHUB_OUTPUT
+          
+          # 清理临时目录
+          Remove-Item -Path $packageDir -Recurse -Force
+
+        env:
+          PLATFORM: ${{ runner.arch }}
 
       - name: Upload artifacts for windows
-        if: steps.build.outputs.status == 'success' && runner.os != 'macOS'
+        if: steps.build.outputs.status == 'success' && runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: FastLauncher-${{ matrix.os }}
-          path: out/make/
+          name: FastLauncher-Windows
+          path: |
+            FastLauncher-windows*.zip
+            out/make/**/*.exe
           retention-days: 14
-          if-no-files-found: error  # 如果没有文件则报错
+          if-no-files-found: error
 
       - name: Upload artifacts for mac
         uses: actions/upload-artifact@v4
-        if: steps.build.outputs.status == 'success' && runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.build.outputs.status == 'success'
         with:
-          name: FastLauncher--${{ matrix.os }}
-          path: out/FastLauncher-darwin-arm64
+          name: FastLauncher-macOS
+          path: signed_output/
           retention-days: 14
-          if-no-files-found: error  # 如果没有文件则报错
+          if-no-files-found: error
