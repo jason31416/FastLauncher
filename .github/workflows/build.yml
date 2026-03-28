@@ -11,8 +11,8 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-latest] #, windows-latest]
-        node-version: [22]
+        os: [macos-latest, windows-latest]
+        node-version: [24]
       fail-fast: false  # 允许其他平台继续构建即使某个失败
 
     runs-on: ${{ matrix.os }}
