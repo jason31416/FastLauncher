@@ -13,6 +13,7 @@ jobs:
         node-version: [22]
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +27,6 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: |
-          # 不需要删除 node_modules，但确保版本正确
           node --version
           npm --version
           npm ci
