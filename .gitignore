@@ -30,8 +30,6 @@ coverage
 .lock-wscript
 
 .idea/
-package-lock.json
-
 # Compiled binary addons (https://nodejs.org/api/addons.html)
 build/Release
 
