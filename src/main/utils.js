@@ -6,6 +6,7 @@ import { platform, arch } from 'os';
 
 export const BMCLAPI_BASE = 'https://bmclapi2.bangbang93.com';
 export const META_URL = `${BMCLAPI_BASE}/mc/game/version_manifest_v2.json`;
+export const FABRIC_MAVEN_BASE = 'https://maven.fabricmc.net/';
 
 export const PLATFORM = getPlatform();
 export const ARCH = getArch();
@@ -51,7 +52,16 @@ export async function ensureDir(dir) {
 }
 
 export async function verifySHA1(filePath, expectedSha1) {
+  try {
+    const stats = await fs.stat(filePath);
+    if (stats.size === 0) return false;
+  } catch (e) {
+    if (e.code === 'ENOENT') return false;
+    throw e;
+  }
+  
   if (!expectedSha1) return true;
+  
   try {
     const hash = crypto.createHash('sha1');
     const data = await fs.readFile(filePath);

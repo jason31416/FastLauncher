@@ -7,13 +7,16 @@ import { EventEmitter } from 'events';
 import { createHash, randomUUID } from 'crypto';
 import AdmZip from 'adm-zip';
 import { getMinecraftDir, getJVMArgs, getGameArgs, filterByOS, ensureDir } from './utils.js';
+import { javaManager } from './javaManager.js';
+import { FABRIC_ENABLED, FABRIC_MC_VERSION, getFabricClasspath } from './fabric.js';
 
-const VERSION_ID = '1.21.1';
+const VERSION_ID = FABRIC_MC_VERSION;
 
 export class GameLauncher extends EventEmitter {
-  constructor(versionJson) {
+  constructor(versionJson, fabricData = null) {
     super();
     this.versionJson = versionJson;
+    this.fabricData = fabricData;
     this.process = null;
     this.nativesDir = null;
   }
@@ -67,6 +70,12 @@ export class GameLauncher extends EventEmitter {
     const separator = process.platform === 'windows' ? ';' : ':';
     
     const classpath = [];
+    
+    if (FABRIC_ENABLED && this.fabricData) {
+      const fabricClasspath = getFabricClasspath(this.fabricData, this.versionJson);
+      classpath.push(...fabricClasspath);
+      console.log('[LAUNCHER] Added', fabricClasspath.length, 'Fabric libraries to classpath');
+    }
     
     for (const lib of this.versionJson.libraries) {
       if (!filterByOS(lib.rules)) continue;
@@ -364,7 +373,8 @@ export class GameLauncher extends EventEmitter {
     const classpath = this.buildClasspath();
     console.log('[LAUNCHER] Classpath built, length:', classpath.length);
     
-    const javaPath = this.findJava();
+    const requiredJavaVersion = this.versionJson.javaVersion?.majorVersion || 17;
+    const javaPath = await javaManager.ensureJava(requiredJavaVersion);
     console.log('[LAUNCHER] Java path:', javaPath);
     
     const fullArgs = [
@@ -439,22 +449,6 @@ export class GameLauncher extends EventEmitter {
         resolve();
       }, 5000);
     });
-  }
-
-  findJava() {
-    const javaHome = process.env.JAVA_HOME;
-    console.log('[LAUNCHER] JAVA_HOME:', javaHome);
-    console.log('[LAUNCHER] process.env:', JSON.stringify(process.env).substring(0, 200));
-    
-    if (javaHome) {
-      const javaPath = path.join(javaHome, 'bin', 'java');
-      console.log('[LAUNCHER] Using JAVA_HOME java:', javaPath);
-      return javaPath;
-    }
-    
-    const javaPath = process.platform === 'windows' ? 'java.exe' : 'java';
-    console.log('[LAUNCHER] Using system java:', javaPath);
-    return javaPath;
   }
 
   async kill() {

@@ -9,6 +9,10 @@ export const useLauncherStore = defineStore('launcher', () => {
   const profile = ref(null);
   const error = ref(null);
   
+  const javaDownloading = ref(false);
+  const javaDownloadProgress = ref(0);
+  const javaDownloadMessage = ref('');
+  
   const progress = ref({
     completed: 0,
     total: 0,
@@ -75,6 +79,12 @@ export const useLauncherStore = defineStore('launcher', () => {
     retryInfo.value = info;
   }
 
+  function setJavaDownload(downloading, progress = 0, message = '') {
+    javaDownloading.value = downloading;
+    javaDownloadProgress.value = progress;
+    javaDownloadMessage.value = message;
+  }
+
   function updateWorkerStatus(workerId, data) {
     const newStatus = [...workerStatus.value];
     newStatus[workerId] = { fileId: data.id, path: data.path };
@@ -111,6 +121,9 @@ export const useLauncherStore = defineStore('launcher', () => {
     versionInfo,
     profile,
     error,
+    javaDownloading,
+    javaDownloadProgress,
+    javaDownloadMessage,
     progress,
     currentFile,
     retryInfo,
@@ -133,6 +146,7 @@ export const useLauncherStore = defineStore('launcher', () => {
     updateProgress,
     setCurrentFile,
     setRetryInfo,
+    setJavaDownload,
     reset
   };
 });

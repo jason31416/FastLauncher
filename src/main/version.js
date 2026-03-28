@@ -1,14 +1,17 @@
 import path from 'path';
-import { downloadVersionManifest, downloadVersionJson, downloadAssetIndex } from './downloader.js';
+import { downloadVersionManifest, downloadVersionJson, downloadAssetIndex, readVersionJsonCache } from './downloader.js';
 import { getMinecraftDir, getOSNativesKey, filterByOS } from './utils.js';
+import { FABRIC_ENABLED, FABRIC_MC_VERSION, getFabricData, buildFabricLibraryItems, buildFabricVersionJson } from './fabric.js';
 
-const VERSION_ID = '1.21.1';
+const VERSION_ID = FABRIC_MC_VERSION;
 
 export class VersionManager {
   constructor() {
     this.manifest = null;
     this.versionJson = null;
     this.assetIndex = null;
+    this.fabricData = null;
+    this.fabricVersionJson = null;
   }
 
   async fetchManifest() {
@@ -17,15 +20,36 @@ export class VersionManager {
   }
 
   async fetchVersionJson() {
+    const cached = await readVersionJsonCache(VERSION_ID);
+    if (cached) {
+      this.versionJson = cached;
+      const versionDir = path.join(getMinecraftDir(), 'versions', VERSION_ID);
+      this.versionJson._versionPath = path.join(versionDir, `${VERSION_ID}.json`);
+      return this.versionJson;
+    }
+
     const version = this.manifest.versions.find(v => v.id === VERSION_ID);
     if (!version) throw new Error(`Version ${VERSION_ID} not found`);
     
-    this.versionJson = await downloadVersionJson(version.url);
+    this.versionJson = await downloadVersionJson(version.url, version.id);
     
     const versionDir = path.join(getMinecraftDir(), 'versions', VERSION_ID);
     this.versionJson._versionPath = path.join(versionDir, `${VERSION_ID}.json`);
     
     return this.versionJson;
+  }
+
+  async fetchFabricData() {
+    if (!FABRIC_ENABLED) return null;
+    
+    try {
+      this.fabricData = await getFabricData(VERSION_ID);
+      this.fabricVersionJson = buildFabricVersionJson(this.fabricData, this.versionJson);
+      return this.fabricData;
+    } catch (error) {
+      console.error('[VERSION] Failed to fetch Fabric data:', error);
+      return null;
+    }
   }
 
   async fetchAssetIndex(downloadManager) {
@@ -43,8 +67,7 @@ export class VersionManager {
       });
     }
     
-    const indexUrl = assetIndex.url.replace('https://piston-meta.mojang.com/', 'https://bmclapi2.bangbang93.com/');
-    this.assetIndex = await downloadAssetIndex(assetIndex.url);
+    this.assetIndex = await downloadAssetIndex(assetIndex.url, assetIndex.id);
     return this.assetIndex;
   }
 
@@ -105,6 +128,20 @@ export class VersionManager {
       });
     }
 
+    if (FABRIC_ENABLED && this.fabricData) {
+      const fabricLibs = buildFabricLibraryItems(this.fabricData);
+      for (const lib of fabricLibs) {
+        items.push({
+          id: lib.id,
+          path: lib.path,
+          url: lib.url,
+          sha1: lib.sha1,
+          size: lib.size,
+          type: lib.type
+        });
+      }
+    }
+
     return items;
   }
 
@@ -131,20 +168,36 @@ export class VersionManager {
   }
 
   getVersionInfo() {
+    const versionJson = this.fabricVersionJson || this.versionJson;
     return {
-      id: VERSION_ID,
-      type: this.versionJson.type,
-      releaseTime: this.versionJson.releaseTime,
-      mainClass: this.versionJson.mainClass,
+      id: versionJson.id,
+      type: versionJson.type,
+      releaseTime: versionJson.releaseTime,
+      mainClass: versionJson.mainClass,
       minecraftDir: getMinecraftDir(),
-      javaVersion: this.versionJson.javaVersion
+      javaVersion: versionJson.javaVersion,
+      fabricEnabled: FABRIC_ENABLED && !!this.fabricData,
+      fabricVersion: this.fabricData?.loader?.version || null
     };
+  }
+
+  getVersionJsonForLaunch() {
+    return this.fabricVersionJson || this.versionJson;
   }
 }
 
 export async function createVersionManager() {
   const manager = new VersionManager();
-  await manager.fetchManifest();
+  
+  const cached = await readVersionJsonCache(VERSION_ID);
+  if (!cached) {
+    await manager.fetchManifest();
+  }
   await manager.fetchVersionJson();
+  
+  if (FABRIC_ENABLED) {
+    await manager.fetchFabricData();
+  }
+  
   return manager;
 }

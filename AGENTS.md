@@ -2,15 +2,10 @@
 
 ## Project Overview
 
-An Electron-based Minecraft launcher using Vue 3, Vite, Pinia, and Tailwind CSS v4.
+Electron-based Minecraft launcher using Vue 3, Vite, Pinia, and Tailwind CSS v4.
 
 **Tech Stack:**
-- Electron 41.x (main process)
-- Vue 3.5.x with Composition API (`<script setup>`)
-- Pinia 3.x for state management
-- Vite 5.x for bundling
-- Tailwind CSS v4 for styling
-- adm-zip for native extraction
+- Electron 41.x | Vue 3.5.x (Composition API) | Pinia 3.x | Vite 5.x | Tailwind CSS v4 | adm-zip
 
 **Directory Structure:**
 ```
@@ -20,12 +15,13 @@ src/
 ├── renderer.js          # Vue app entry point
 ├── index.css            # Global styles + Tailwind
 ├── main/                # Main process modules
-│   ├── downloader.js    # Download manager with concurrency
-│   ├── launcher.js      # Game launch logic
+│   ├── downloader.js    # Download manager, caching logic, SHA1 verification
+│   ├── launcher.js      # Game launch logic, classpath/JVM args building
 │   ├── userManager.js   # Profile management
-│   ├── utils.js        # Shared utilities
-│   └── version.js       # Version management
-└── renderer/            # Renderer process
+│   ├── utils.js         # Shared utilities, path helpers, platform detection
+│   ├── version.js       # Version management, download list building
+│   └── fabric.js        # Fabric modloader support
+└── renderer/            # Renderer process (Vue)
     ├── App.vue          # Main Vue component
     ├── components/      # Vue components
     └── stores/          # Pinia stores
@@ -36,183 +32,115 @@ src/
 ## Build/Lint/Test Commands
 
 ```bash
-# Development
-npm start                # Run app in development mode
-
-# Production builds
-npm run package         # Package app (creates unsigned .app)
-npm run make            # Create distributable installer
-npm run publish         # Publish to GitHub Releases
-
-# Linting (currently not configured)
-npm run lint            # Currently echoes "No linting configured"
+npm start        # Development mode (Electron + Vite dev servers)
+npm run package # Package app as unsigned .app
+npm run make    # Create distributable installer
+npm run publish # Publish to GitHub Releases
 ```
 
-**No test framework is currently configured.**
+**No test framework configured.** No linting configured.
 
 ---
 
-## Code Style Guidelines
+## Code Style
 
 ### General
+- **ES Modules**: `import`/`export` only (no CommonJS `require`)
+- **No semicolons**: ASI-based formatting
+- **Indentation**: 2 spaces | **Line endings**: LF
+- **Comments**: Do NOT add comments unless explicitly requested
 
-- **ES Modules**: Use `import`/`export` exclusively (no CommonJS `require`)
-- **No semicolons**: Follow StandardJS-style ( ASI-based )
-- **Indentation**: 2 spaces
-- **Line endings**: LF
-
-### JavaScript (Main/Renderer)
-
-**Naming Conventions:**
+### Naming Conventions
 - Variables/functions: `camelCase`
 - Classes: `PascalCase`
 - Constants: `UPPER_SNAKE_CASE`
 - Private methods: prefix with `_`
 
-**Imports:**
+### Imports
 ```javascript
-// External packages
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { createApp } from 'vue';
 import path from 'node:path';
-
-// Internal modules (use .js extension)
-import { DownloadManager } from './main/downloader.js';
-import { useLauncherStore } from './stores/launcher.js';
+import { DownloadManager } from './main/downloader.js';  // internal modules use .js extension
 ```
 
-**Async/Await:**
+### Async/Await & Error Handling
 ```javascript
-// Always wrap async operations in try/catch when calling from IPC handlers
-async function startDownload(username) {
+// Always wrap async IPC handlers in try/catch
+ipcMain.handle('channel-name', async (event, { param }) => {
   try {
-    // async operations
-  } catch (error) {
-    sendToRenderer('state-change', { state: 'error', message: error.message });
-  }
-}
-```
-
-**Error Handling:**
-- Use `error.message` for user-facing messages
-- Use `error.stack` for debugging (send to renderer when needed)
-- Check error codes (e.g., `e.code === 'ENOENT'`)
-- Use `console.error` with `[PREFIX]` format: `[DOWNLOAD FAILED]`, `[LAUNCHER]`, etc.
-
-### Vue Components
-
-**Script Setup:**
-```vue
-<script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { useLauncherStore } from './stores/launcher.js';
-import TitleBar from './components/TitleBar.vue';
-
-const store = useLauncherStore();
-const username = ref('');
-
-onMounted(async () => {
-  // cleanup in onUnmounted
-});
-</script>
-```
-
-**Template:**
-- Use `v-if`/`v-else-if`/`v-else` chain for mutually exclusive states
-- Use Tailwind classes for all styling
-- Prefer `flex` layout with `gap-*` utilities
-- Use semantic HTML elements
-
-### Tailwind CSS
-
-**Class Ordering (suggested):**
-1. Layout: `flex`, `grid`, `hidden`, `block`
-2. Sizing: `w-*`, `h-*`, `max-w-*`
-3. Spacing: `p-*`, `m-*`, `gap-*`
-4. Typography: `text-*`, `font-*`
-5. Colors: `bg-*`, `text-*`, `border-*`
-6. Effects: `shadow-*`, `rounded-*`
-7. Transitions: `transition-*`, `duration-*`
-8. Interactive: `hover:*`, `focus:*`, `active:*`, `disabled:*`
-
-**Breakpoints:**
-- `sm:` (640px), `md:` (768px), `lg:` (1024px), `xl:` (1280px)
-
-### IPC Communication
-
-**Pattern:**
-```javascript
-// Main process - sending
-ipcMain.handle('channel-name', async (event, { param1, param2 }) => {
-  try {
-    const result = await someAsyncOperation(param1);
-    return { success: true, data: result };
+    return { success: true, data: await someAsyncOp(param) };
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
 
-// Renderer - receiving via preload API
-const api = window.launcherAPI;
-api.someAction(param1, param2).then(result => {
-  if (result.success) {
-    // handle success
-  } else {
-    // handle error
-  }
-});
-
-// Renderer - listening to events
-const unsubscribe = api.onStateChange((data) => {
-  store.setState(data.state, data.message);
-});
-onUnmounted(() => unsubscribe());
+// Use error.message for UI display, error.stack for debugging
+// console.error with [PREFIX] format: [DOWNLOAD FAILED], [LAUNCHER], [FABRIC]
 ```
 
-**Preload API Exposed:**
-- `window.launcherAPI` - Game/download operations
-- `window.controlAPI` - Window controls (minimize, close)
+### Vue Components (`<script setup>`)
+```vue
+<script setup>
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+const store = useLauncherStore();
+</script>
+```
 
-### State Management (Pinia)
-
+### IPC Communication
 ```javascript
-import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+// Main: ipcMain.handle returns { success, data/error }
+// Renderer: window.launcherAPI.someAction().then(handleResult)
+// Events: window.launcherAPI.onStateChange(callback) → unsubscribe in onUnmounted
+```
 
+### Pinia Store
+```javascript
 export const useLauncherStore = defineStore('launcher', () => {
   const state = ref('idle');
-  
   const isDownloading = computed(() => state.value === 'downloading');
-  
-  function setState(newState, newMessage) {
-    state.value = newState;
-    message.value = newMessage || '';
-  }
-  
-  return { state, isDownloading, setState };
+  return { state, isDownloading };
 });
 ```
 
-### EventEmitter Pattern
-
+### EventEmitter (DownloadManager, GameLauncher)
 ```javascript
-import { EventEmitter } from 'events';
-
 class DownloadManager extends EventEmitter {
-  constructor() {
-    super();
-  }
-  
-  _emitProgress(status) {
-    this.emit('progress', status);
-  }
+  _emitProgress(status) { this.emit('progress', status); }
 }
-
-// Usage
-downloadManager.on('progress', (status) => {
-  sendToRenderer('download-progress', status);
-});
+downloadManager.on('progress', (status) => sendToRenderer('download-progress', status));
 ```
+
+---
+
+## Caching Strategy
+
+Cached in `app.getPath('userData')/cache/`:
+- `versions/{versionId}.json` - version JSON (permanent)
+- `assets/indexes/{assetIndexId}.json` - asset index (permanent)
+
+Manifest is **not** cached - fetched every time, but skipped if version JSON cache exists.
+
+SHA1 verification: Files with `sha1: null` are re-downloaded if size is 0.
+
+---
+
+## Modloader Support
+
+### Fabric (Currently Implemented)
+
+**Configuration** in `src/main/fabric.js`:
+```javascript
+export const FABRIC_ENABLED = false;  // Toggle Fabric support
+export const FABRIC_MC_VERSION = '1.21.1';  // Minecraft version
+```
+
+**Key Functions:**
+- `getFabricVersions(mcVersion)` - Fetch from `https://meta.fabricmc.net/v2/versions/loader/{mcVersion}`
+- `buildFabricLibraryItems(fabricData)` - Build download items for Fabric libraries
+- `buildFabricVersionJson(fabricData, vanillaVersionJson)` - Merge Fabric with vanilla version JSON
+- `getFabricClasspath(fabricData, vanillaVersionJson)` - Get Fabric classpath entries (prepended before vanilla libs)
+
+**Fabric Maven:** `https://maven.fabricmc.net/`
 
 ---
 
@@ -221,62 +149,60 @@ downloadManager.on('progress', (status) => {
 ### Electron Main Process
 - Context isolation enabled, nodeIntegration disabled
 - All Node.js/file operations in main process only
-- Use `app.quit()` on window-close unless on macOS (`process.platform !== 'darwin'`)
 
-### Vite Configuration
-- `vite.main.config.mjs` - Main process bundling
-- `vite.preload.config.mjs` - Preload script bundling  
-- `vite.renderer.config.mjs` - Vue app bundling with Tailwind
-
-### Forge Configuration
-- Entry points: `src/main.js` (main), `src/preload.js` (preload)
-- Output: `.vite/build/`
+### Vite Configs
+- `vite.main.config.mjs` | `vite.preload.config.mjs` | `vite.renderer.config.mjs`
 - Uses `@electron-forge/plugin-vite`
 
 ### Platform Detection
 ```javascript
 import { platform, arch } from 'os';
-// platform(): 'darwin' | 'linux' | 'win32'
-// arch(): 'x64' | 'arm64'
+// platform(): 'darwin' | 'linux' | 'win32' | arch(): 'x64' | 'arm64' | 'aarch_64'
 ```
 
 ### File Paths
 ```javascript
 import path from 'node:path';
-// Always use path.join() for cross-platform paths
-// getMinecraftDir() returns platform-specific minecraft directory
+path.join(getMinecraftDir(), 'versions', versionId);  // Always use path.join()
 ```
 
----
-
-## Common Patterns
-
-**Checking if window is destroyed:**
+### Window Check Pattern
 ```javascript
 if (mainWindow && !mainWindow.isDestroyed()) {
   mainWindow.webContents.send(channel, data);
 }
 ```
 
-**Mutex pattern for thread-safe queue:**
+### Thread-Safe Queue (Mutex)
 ```javascript
 async withMutex(fn) {
-  while (this._mutex) {
-    await sleep(10);
-  }
+  while (this._mutex) { await sleep(10); }
   this._mutex = true;
-  try {
-    return await fn();
-  } finally {
-    this._mutex = false;
-  }
+  try { return await fn(); }
+  finally { this._mutex = false; }
 }
 ```
 
-**Dynamic import for circular deps:**
-```javascript
-export async function downloadVersionManifest() {
-  const { META_URL, toBMCLAPI } = await import('./utils.js');
-  // ...
-}
-```
+---
+
+## Common Workflows
+
+### Adding a new download/cache type:
+1. Add `getXxxCachePath()`, `readXxxCache()`, `writeXxxCache()` in `downloader.js`
+2. Export the read function if needed by `version.js`
+3. Use in `version.js` or `downloader.js` as appropriate
+
+### Adding a new modloader (e.g., Forge, NeoForge):
+1. Create `src/main/{modloader}.js` with version fetching and library building
+2. Add constants `{MODLOADER}_ENABLED` and `{MODLOADER}_MC_VERSION`
+3. Modify `version.js`: add fetch call and merge version JSON
+4. Modify `launcher.js`: update `buildClasspath()` to prepend modloader libraries
+5. Update `getVersionInfo()` to return modloader-specific mainClass
+
+### Game Launch Flow
+1. `createVersionManager()` → fetches version manifest + JSON
+2. If modloader enabled → fetch modloader data + merge version JSON
+3. `DownloadManager` downloads all libraries, assets, and modloader files
+4. `GameLauncher` receives merged version JSON + modloader data
+5. `buildClasspath()` prepends modloader libraries before vanilla
+6. `launch()` spawns Java process with correct classpath and mainClass

@@ -6,6 +6,9 @@ const api = {
   cancelDownload: () => ipcRenderer.invoke('cancel-download'),
   getMinecraftDir: () => ipcRenderer.invoke('get-minecraft-dir'),
   
+  checkJavaStatus: () => ipcRenderer.invoke('check-java'),
+  downloadJava: (version) => ipcRenderer.invoke('download-java', { version }),
+  
   getProfiles: () => ipcRenderer.invoke('get-profiles'),
   createProfile: (username) => ipcRenderer.invoke('create-profile', { username }),
   deleteProfile: (profileId) => ipcRenderer.invoke('delete-profile', { profileId }),
@@ -64,6 +67,42 @@ const api = {
     const handler = (event, data) => callback(data);
     ipcRenderer.on('completeness-change', handler);
     return () => ipcRenderer.removeListener('completeness-change', handler);
+  },
+  
+  onJavaDownloadStart: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('java-download-start', handler);
+    return () => ipcRenderer.removeListener('java-download-start', handler);
+  },
+  
+  onJavaDownloadProgress: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('java-download-progress', handler);
+    return () => ipcRenderer.removeListener('java-download-progress', handler);
+  },
+  
+  onJavaDownloadStage: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('java-download-stage', handler);
+    return () => ipcRenderer.removeListener('java-download-stage', handler);
+  },
+  
+  onJavaDownloadRetry: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('java-download-retry', handler);
+    return () => ipcRenderer.removeListener('java-download-retry', handler);
+  },
+  
+  onJavaDownloadComplete: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('java-download-complete', handler);
+    return () => ipcRenderer.removeListener('java-download-complete', handler);
+  },
+  
+  onJavaDownloadError: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('java-download-error', handler);
+    return () => ipcRenderer.removeListener('java-download-error', handler);
   },
 };
 

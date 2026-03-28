@@ -252,7 +252,39 @@ export async function downloadVersionManifest() {
   return response.json();
 }
 
-export async function downloadVersionJson(versionUrl) {
+async function getVersionJsonCachePath(versionId) {
+  const { app } = await import('electron');
+  const cacheDir = path.join(app.getPath('userData'), 'cache', 'versions');
+  return path.join(cacheDir, `${versionId}.json`);
+}
+
+export async function readVersionJsonCache(versionId) {
+  try {
+    const cachePath = await getVersionJsonCachePath(versionId);
+    console.log(`[VERSION CACHE] Read from: ${cachePath}`);
+    const data = await fs.readFile(cachePath, 'utf-8');
+    return JSON.parse(data);
+  } catch (e) {
+    console.log(`[VERSION CACHE] Miss: ${e.code}`);
+    return null;
+  }
+}
+
+async function writeVersionJsonCache(versionId, versionJson) {
+  const { app } = await import('electron');
+  const cacheDir = path.join(app.getPath('userData'), 'cache', 'versions');
+  await ensureDir(cacheDir);
+  const cachePath = await getVersionJsonCachePath(versionId);
+  console.log(`[VERSION CACHE] Write to: ${cachePath}`);
+  await fs.writeFile(cachePath, JSON.stringify(versionJson, null, 2), 'utf-8');
+}
+
+export async function downloadVersionJson(versionUrl, versionId) {
+  const cached = await readVersionJsonCache(versionId);
+  if (cached) {
+    return cached;
+  }
+
   const url = toBMCLAPI(versionUrl);
   let response = await fetch(url);
   if (response.status === 404) {
@@ -260,10 +292,41 @@ export async function downloadVersionJson(versionUrl) {
     response = await fetch(versionUrl);
   }
   if (!response.ok) throw new Error(`Failed to fetch version JSON: ${response.status}`);
-  return response.json();
+  const versionJson = await response.json();
+  await writeVersionJsonCache(versionId, versionJson);
+  return versionJson;
 }
 
-export async function downloadAssetIndex(assetIndexUrl) {
+async function getAssetIndexCachePath(assetIndexId) {
+  const { app } = await import('electron');
+  const cacheDir = path.join(app.getPath('userData'), 'cache', 'assets');
+  return path.join(cacheDir, `indexes`, `${assetIndexId}.json`);
+}
+
+async function readAssetIndexCache(assetIndexId) {
+  try {
+    const cachePath = await getAssetIndexCachePath(assetIndexId);
+    const data = await fs.readFile(cachePath, 'utf-8');
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+async function writeAssetIndexCache(assetIndexId, assetIndex) {
+  const { app } = await import('electron');
+  const cacheDir = path.join(app.getPath('userData'), 'cache', 'assets', 'indexes');
+  await ensureDir(cacheDir);
+  const cachePath = await getAssetIndexCachePath(assetIndexId);
+  await fs.writeFile(cachePath, JSON.stringify(assetIndex, null, 2), 'utf-8');
+}
+
+export async function downloadAssetIndex(assetIndexUrl, assetIndexId) {
+  const cached = await readAssetIndexCache(assetIndexId);
+  if (cached) {
+    return cached;
+  }
+
   const url = toBMCLAPI(assetIndexUrl);
   let response = await fetch(url);
   if (response.status === 404) {
@@ -271,5 +334,7 @@ export async function downloadAssetIndex(assetIndexUrl) {
     response = await fetch(assetIndexUrl);
   }
   if (!response.ok) throw new Error(`Failed to fetch asset index: ${response.status}`);
-  return response.json();
+  const assetIndex = await response.json();
+  await writeAssetIndexCache(assetIndexId, assetIndex);
+  return assetIndex;
 }

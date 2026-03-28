@@ -5,6 +5,7 @@ import { DownloadManager } from './main/downloader.js';
 import { GameLauncher, createOfflineProfile } from './main/launcher.js';
 import { getMinecraftDir, ensureDir } from './main/utils.js';
 import { UserManager } from './main/userManager.js';
+import { javaManager } from './main/javaManager.js';
 import fs from 'fs/promises';
 
 Menu.setApplicationMenu(null);
@@ -102,7 +103,7 @@ async function startDownload(username) {
     
     sendToRenderer('state-change', { state: 'extracting', message: '正在解压 natives...' });
     
-    launcher = new GameLauncher(versionManager.versionJson);
+    launcher = new GameLauncher(versionManager.getVersionJsonForLaunch(), versionManager.fabricData);
     
     launcher.on('stdout', (log) => {
       console.log('[GAME OUTPUT]', log);
@@ -217,6 +218,48 @@ app.whenReady().then(async () => {
   ipcMain.handle('select-profile', async (event, { username }) => {
     const profile = await userManager.selectProfile(username);
     return { success: true, profile };
+  });
+
+  ipcMain.handle('check-java', async () => {
+    try {
+      const info = await javaManager.getJavaInfo();
+      return { success: true, ...info };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('download-java', async (event, { version }) => {
+    try {
+      const javaPath = await javaManager.downloadAndInstallJava(version || 17);
+      return { success: true, javaPath };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  javaManager.on('download-start', ({ version }) => {
+    sendToRenderer('java-download-start', { version });
+  });
+
+  javaManager.on('download-progress', ({ downloaded, total, progress, method }) => {
+    sendToRenderer('java-download-progress', { downloaded, total, progress, method });
+  });
+
+  javaManager.on('download-stage', ({ stage, progress }) => {
+    sendToRenderer('java-download-stage', { stage, progress });
+  });
+
+  javaManager.on('download-retry', ({ attempt, maxRetries, error }) => {
+    sendToRenderer('java-download-retry', { attempt, maxRetries, error });
+  });
+
+  javaManager.on('download-complete', ({ version, javaPath }) => {
+    sendToRenderer('java-download-complete', { version, javaPath });
+  });
+
+  javaManager.on('download-error', ({ error }) => {
+    sendToRenderer('java-download-error', { error });
   });
 
   app.on('activate', () => {

@@ -73,6 +73,49 @@ onMounted(async () => {
         store.setCompleteness(data.completeness);
       })
   );
+
+  unsubscribers.push(
+      api.onJavaDownloadStart((data) => {
+        store.setJavaDownload(true, 0, `正在下载 Java ${data.version}...`);
+        store.setState('java-downloading', `正在下载 Java ${data.version}...`);
+      })
+  );
+
+  unsubscribers.push(
+      api.onJavaDownloadStage((data) => {
+        store.setJavaDownload(true, data.progress, data.stage);
+        store.setState('java-downloading', data.stage);
+      })
+  );
+
+  unsubscribers.push(
+      api.onJavaDownloadProgress((data) => {
+        const method = data.method ? ` (${data.method})` : '';
+        store.setJavaDownload(true, data.progress, `下载中${method} ${data.progress}%`);
+        store.setState('java-downloading', `下载中${method} ${data.progress}%`);
+      })
+  );
+
+  unsubscribers.push(
+      api.onJavaDownloadRetry((data) => {
+        const msg = `下载失败，重试 (${data.attempt}/${data.maxRetries})...`;
+        store.setJavaDownload(true, store.javaDownloadProgress, msg);
+        store.setState('java-downloading', msg);
+      })
+  );
+
+  unsubscribers.push(
+      api.onJavaDownloadComplete((data) => {
+        store.setJavaDownload(false, 100, 'Java 下载完成');
+      })
+  );
+
+  unsubscribers.push(
+      api.onJavaDownloadError((data) => {
+        store.setJavaDownload(false, 0, data.error);
+        store.setError(data.error);
+      })
+  );
 });
 
 async function loadProfiles() {
@@ -113,9 +156,11 @@ async function deleteProfile(profileId) {
   }
 }
 
-function selectProfile(profileUsername) {
+async function selectProfile(profileUsername) {
   username.value = profileUsername;
-  window.launcherAPI.selectProfile(profileUsername);
+  await window.launcherAPI.selectProfile(profileUsername);
+  store.username = profileUsername;
+  await window.launcherAPI.startDownload(profileUsername);
 }
 
 onUnmounted(() => {
@@ -124,6 +169,8 @@ onUnmounted(() => {
 
 async function startGame() {
   if (!username.value.trim()) return;
+  await window.launcherAPI.createProfile(username.value.trim());
+  await loadProfiles();
   store.username = username.value;
   await window.launcherAPI.startDownload(username.value);
 }
@@ -279,6 +326,19 @@ async function cancelDownload() {
           <div class="spinner"></div>
           <p class="status-message">{{ store.message }}</p>
           <p class="status-hint">正在解压游戏文件...</p>
+        </div>
+      </template>
+
+      <template v-else-if="store.state === 'java-downloading'">
+        <div class="status-view">
+          <div class="spinner"></div>
+          <p class="status-message">{{ store.message }}</p>
+          <p class="status-hint">正在下载并安装 Java...</p>
+          <div class="java-progress" v-if="store.javaDownloadProgress > 0">
+            <div class="progress-bar">
+              <div class="progress-fill" :style="{ width: store.javaDownloadProgress + '%' }"></div>
+            </div>
+          </div>
         </div>
       </template>
 
@@ -777,5 +837,24 @@ async function cancelDownload() {
   border: 1px solid #fecaca;
   text-align: left;
   word-break: break-all;
+}
+
+.java-progress {
+  width: 200px;
+  margin: 16px auto 0;
+}
+
+.java-progress .progress-bar {
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.java-progress .progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #93c5fd);
+  border-radius: 3px;
+  transition: width 0.3s ease;
 }
 </style>
