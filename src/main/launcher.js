@@ -87,66 +87,121 @@ export class GameLauncher extends EventEmitter {
 
   buildJvmArgs() {
     const args = [];
-    
     const jvmArgs = this.versionJson.arguments?.jvm || [];
-    console.log('[LAUNCHER] Raw JVM args from version.json:', jvmArgs.length);
-    
+    const classpath = this.buildClasspath(); // 预先计算 classpath
+
+    // 用于跳过下一个参数的标志
+    let skipNext = false;
+
     for (const arg of jvmArgs) {
+      // 处理普通字符串
       if (typeof arg === 'string') {
-        const expanded = arg
-          .replace(/\$\{natives_directory\}/g, this.nativesDir)
-          .replace(/\$\{launcher_name\}/g, 'fastlauncher')
-          .replace(/\$\{launcher_version\}/g, '1.0.0')
-          .replace(/\$\{classpath\}/g, this.buildClasspath());
-        
-        if (expanded === '-cp' || expanded === '${classpath}') continue;
-        
-        if (expanded.includes('-XX:HeapDumpPath=')) {
-          const heapDumpPath = expanded.split('=')[1];
-          if (process.platform === 'win32') {
-            args.push(`-XX:HeapDumpPath=${heapDumpPath}`);
-          }
+        if (skipNext) {
+          skipNext = false;
           continue;
         }
-        
+
+        // 跳过 -cp 和 -classpath 选项本身
+        if (arg === '-cp' || arg === '-classpath') {
+          skipNext = true;
+          continue;
+        }
+
+        // 替换变量
+        let expanded = arg
+            .replace(/\$\{natives_directory\}/g, this.nativesDir)
+            .replace(/\$\{launcher_name\}/g, 'fastlauncher')
+            .replace(/\$\{launcher_version\}/g, '1.0.0')
+            .replace(/\$\{classpath\}/g, classpath);
+
+        // 如果替换后变成了 classpath 字符串，说明是 ${classpath}，直接跳过
+        if (expanded === classpath) {
+          continue;
+        }
+
+        // 其他处理（如 HeapDumpPath 等）
+        if (expanded.includes('-XX:HeapDumpPath=') && process.platform !== 'win32') {
+          continue;
+        }
+
         args.push(expanded);
-      } else if (Array.isArray(arg)) {
-        for (const a of arg) {
+      }
+      // 处理数组形式的参数（某些版本 JSON 会有数组结构）
+      else if (Array.isArray(arg)) {
+        for (let i = 0; i < arg.length; i++) {
+          const a = arg[i];
+          if (skipNext) {
+            skipNext = false;
+            continue;
+          }
           if (typeof a === 'string') {
-            const expanded = a
-              .replace(/\$\{natives_directory\}/g, this.nativesDir)
-              .replace(/\$\{launcher_name\}/g, 'fastlauncher')
-              .replace(/\$\{launcher_version\}/g, '1.0.0');
+            if (a === '-cp' || a === '-classpath') {
+              skipNext = true;
+              continue;
+            }
+            let expanded = a
+                .replace(/\$\{natives_directory\}/g, this.nativesDir)
+                .replace(/\$\{launcher_name\}/g, 'fastlauncher')
+                .replace(/\$\{launcher_version\}/g, '1.0.0')
+                .replace(/\$\{classpath\}/g, classpath);
+            if (expanded === classpath) continue;
+            if (expanded.includes('-XX:HeapDumpPath=') && process.platform !== 'win32') continue;
             args.push(expanded);
+          } else {
+            // 递归处理内部对象（如果有）
+            args.push(a);
           }
         }
-      } else if (arg && typeof arg === 'object' && arg.rules) {
+      }
+      // 处理带规则的对象
+      else if (arg && typeof arg === 'object' && arg.rules) {
         if (filterByOS(arg.rules)) {
           if (Array.isArray(arg.value)) {
-            for (const a of arg.value) {
-              if (typeof a === 'string') {
-                args.push(a.replace(/\$\{natives_directory\}/g, this.nativesDir));
+            for (let i = 0; i < arg.value.length; i++) {
+              const val = arg.value[i];
+              if (skipNext) {
+                skipNext = false;
+                continue;
               }
+              if (val === '-cp' || val === '-classpath') {
+                skipNext = true;
+                continue;
+              }
+              let expanded = typeof val === 'string' ? val.replace(/\$\{natives_directory\}/g, this.nativesDir) : val;
+              if (expanded === classpath) continue;
+              if (expanded.includes('-XX:HeapDumpPath=') && process.platform !== 'win32') continue;
+              args.push(expanded);
             }
           } else if (typeof arg.value === 'string') {
-            args.push(arg.value.replace(/\$\{natives_directory\}/g, this.nativesDir));
+            if (skipNext) {
+              skipNext = false;
+              continue;
+            }
+            if (arg.value === '-cp' || arg.value === '-classpath') {
+              skipNext = true;
+              continue;
+            }
+            let expanded = arg.value.replace(/\$\{natives_directory\}/g, this.nativesDir);
+            if (expanded === classpath) continue;
+            if (expanded.includes('-XX:HeapDumpPath=') && process.platform !== 'win32') continue;
+            args.push(expanded);
           }
         }
       }
     }
-    
+
+    // 添加 macOS 专用参数
     if (process.platform === 'darwin') {
       args.push('-XstartOnFirstThread');
     }
-    
+
+    // 添加你的自定义 JVM 参数
     args.push(`-Xmx4G`);
     args.push(`-Xms256M`);
     args.push(`-XX:+UseG1GC`);
     args.push(`-XX:-UseAdaptiveSizePolicy`);
     args.push(`-XX:-OmitStackTraceInFastThrow`);
-    
-    console.log('[LAUNCHER] Built JVM args, final count:', args.length);
-    
+
     return args;
   }
 
@@ -166,7 +221,7 @@ export class GameLauncher extends EventEmitter {
           .replace(/\$\{auth_uuid\}/g, profile.uuid)
           .replace(/\$\{auth_access_token\}/g, profile.accessToken)
           .replace(/\$\{clientid\}/g, profile.clientId)
-          .replace(/\$\{auth_xuid\}/g, '')
+          .replace(/\$\{auth_xuid\}/g, profile.xuid || '')
           .replace(/\$\{user_type\}/g, profile.userType)
           .replace(/\$\{version_type\}/g, 'release')
           .replace(/\$\{resolution_width\}/g, '854')
@@ -189,7 +244,7 @@ export class GameLauncher extends EventEmitter {
               .replace(/\$\{auth_uuid\}/g, profile.uuid)
               .replace(/\$\{auth_access_token\}/g, profile.accessToken)
               .replace(/\$\{clientid\}/g, profile.clientId)
-              .replace(/\$\{auth_xuid\}/g, '')
+              .replace(/\$\{auth_xuid\}/g, profile.xuid || '')
               .replace(/\$\{user_type\}/g, profile.userType)
               .replace(/\$\{version_type\}/g, 'release')
               .replace(/\$\{resolution_width\}/g, '854')
@@ -203,11 +258,89 @@ export class GameLauncher extends EventEmitter {
         });
         args.push(...expandedArr);
       } else if (arg && typeof arg === 'object' && arg.rules) {
-        if (filterByOS(arg.rules)) {
+        // 检查规则是否允许
+        let allowed = true;
+        for (const rule of arg.rules) {
+          if (rule.action === 'allow') {
+            // 如果有 features 规则，且要求 is_demo_user = true，但我们是离线模式，应该跳过
+            if (rule.features && rule.features.is_demo_user === true) {
+              allowed = false;
+              break;
+            }
+            // 其他 features 规则（如 has_custom_resolution）可以允许
+            if (rule.features && rule.features.has_custom_resolution === true) {
+              // 允许自定义分辨率参数
+              continue;
+            }
+            if (rule.features && rule.features.has_quick_plays_support === true) {
+              // 我们不需要快速启动功能，跳过
+              allowed = false;
+              break;
+            }
+            if (rule.features && (rule.features.is_quick_play_singleplayer === true ||
+                rule.features.is_quick_play_multiplayer === true ||
+                rule.features.is_quick_play_realms === true)) {
+              // 跳过快速启动参数
+              allowed = false;
+              break;
+            }
+          } else if (rule.action === 'disallow') {
+            // 如果有 disallow 规则且匹配，则不允许
+            if (rule.features && rule.features.is_demo_user === true) {
+              // 对于非 demo 用户，disallow demo 特性，所以允许
+              allowed = true;
+            } else {
+              allowed = false;
+              break;
+            }
+          }
+        }
+
+        // 只有允许时才添加参数
+        if (allowed && filterByOS(arg.rules)) {
           if (Array.isArray(arg.value)) {
-            args.push(...arg.value);
+            // 替换占位符
+            for (const val of arg.value) {
+              const expanded = typeof val === 'string' ? val
+                  .replace(/\$\{auth_player_name\}/g, profile.username)
+                  .replace(/\$\{version_name\}/g, VERSION_ID)
+                  .replace(/\$\{game_directory\}/g, getMinecraftDir())
+                  .replace(/\$\{assets_root\}/g, path.join(getMinecraftDir(), 'assets'))
+                  .replace(/\$\{assets_index_name\}/g, this.versionJson.assets)
+                  .replace(/\$\{auth_uuid\}/g, profile.uuid)
+                  .replace(/\$\{auth_access_token\}/g, profile.accessToken)
+                  .replace(/\$\{clientid\}/g, profile.clientId)
+                  .replace(/\$\{auth_xuid\}/g, profile.xuid || '')
+                  .replace(/\$\{user_type\}/g, profile.userType)
+                  .replace(/\$\{version_type\}/g, 'release')
+                  .replace(/\$\{resolution_width\}/g, '854')
+                  .replace(/\$\{resolution_height\}/g, '480')
+                  .replace(/\$\{quickPlayPath\}/g, '')
+                  .replace(/\$\{quickPlaySingleplayer\}/g, '')
+                  .replace(/\$\{quickPlayMultiplayer\}/g, '')
+                  .replace(/\$\{quickPlayRealms\}/g, '') : val;
+              args.push(expanded);
+            }
           } else if (typeof arg.value === 'string') {
-            args.push(arg.value);
+            const expanded = arg.value
+                .replace(/\$\{auth_player_name\}/g, profile.username)
+                .replace(/\$\{version_name\}/g, VERSION_ID)
+                .replace(/\$\{game_directory\}/g, getMinecraftDir())
+                .replace(/\$\{assets_root\}/g, path.join(getMinecraftDir(), 'assets'))
+                .replace(/\$\{assets_index_name\}/g, this.versionJson.assets)
+                .replace(/\$\{auth_uuid\}/g, profile.uuid)
+                .replace(/\$\{auth_access_token\}/g, profile.accessToken)
+                .replace(/\$\{clientid\}/g, profile.clientId)
+                .replace(/\$\{auth_xuid\}/g, profile.xuid || '')
+                .replace(/\$\{user_type\}/g, profile.userType)
+                .replace(/\$\{version_type\}/g, 'release')
+                .replace(/\$\{resolution_width\}/g, '854')
+                .replace(/\$\{resolution_height\}/g, '480')
+                .replace(/\$\{quickPlayPath\}/g, '')
+                .replace(/\$\{quickPlaySingleplayer\}/g, '')
+                .replace(/\$\{quickPlayMultiplayer\}/g, '')
+                .replace(/\$\{quickPlayRealms\}/g, '');
+            args.push(expanded);
           }
         }
       }
@@ -246,7 +379,7 @@ export class GameLauncher extends EventEmitter {
     ];
 
     console.log('[LAUNCHER] Full command:');
-    console.log('[LAUNCHER]', javaPath, fullArgs.join(' ').substring(0, 500) + '...');
+    console.log('[LAUNCHER]', javaPath, fullArgs.join(' '));
 
     this.emit('launch', {
       javaPath,
@@ -333,18 +466,24 @@ export class GameLauncher extends EventEmitter {
 }
 
 export function createOfflineProfile(username) {
-  const hash = createHash('md5').update(username).digest('hex');
-  const uuid = hash.substring(0, 8) + '-' + 
-               hash.substring(8, 12) + '-' + 
-               hash.substring(12, 16) + '-' + 
-               hash.substring(16, 20) + '-' + 
-               hash.substring(20, 32);
-  
+  const hash = createHash('md5').update('OfflinePlayer:' + username).digest();
+  hash[6] = (hash[6] & 0x0f) | 0x30;
+  hash[8] = (hash[8] & 0x3f) | 0x80;
+
+  const uuid = [
+    hash.slice(0, 4).toString('hex'),
+    hash.slice(4, 6).toString('hex'),
+    hash.slice(6, 8).toString('hex'),
+    hash.slice(8, 10).toString('hex'),
+    hash.slice(10, 16).toString('hex')
+  ].join('-');
+
   return {
     username,
     uuid,
-    accessToken: '0',
+    accessToken: randomUUID().replace(/-/g, ''),
     userType: 'legacy',
-    clientId: randomUUID()
+    clientId: 'offline',
+    xuid: '0'
   };
 }

@@ -5,6 +5,7 @@ import { createVersionManager } from './main/version.js';
 import { DownloadManager } from './main/downloader.js';
 import { GameLauncher, createOfflineProfile } from './main/launcher.js';
 import { getMinecraftDir, ensureDir } from './main/utils.js';
+import { UserManager } from './main/userManager.js';
 import fs from 'fs/promises';
 
 if (started) {
@@ -15,6 +16,7 @@ let mainWindow = null;
 let downloadManager = null;
 let versionManager = null;
 let launcher = null;
+let userManager = null;
 
 const createWindow = () => {
   mainWindow = new BrowserWindow({
@@ -58,6 +60,10 @@ async function startDownload(username) {
     
     downloadManager.on('file-start', ({ workerId, id, path }) => {
       sendToRenderer('file-start', { workerId, id, path });
+    });
+    
+    downloadManager.on('file-end', ({ workerId, id, path }) => {
+      sendToRenderer('file-end', { workerId, id, path });
     });
     
     downloadManager.on('retry', ({ id, path, attempt, error, delay }) => {
@@ -142,7 +148,10 @@ async function launchGame(username) {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  userManager = new UserManager();
+  await userManager.load();
+  
   createWindow();
 
   ipcMain.handle('start-download', async (event, { username }) => {
@@ -182,6 +191,33 @@ app.whenReady().then(() => {
       mainWindow.destroy();
       app.quit();
     }
+  });
+
+  ipcMain.handle('get-profiles', () => {
+    return {
+      profiles: userManager.getProfiles(),
+      lastUsedUsername: userManager.getLastUsedUsername()
+    };
+  });
+
+  ipcMain.handle('create-profile', async (event, { username }) => {
+    const profile = await userManager.createProfile(username);
+    return { success: true, profile };
+  });
+
+  ipcMain.handle('delete-profile', async (event, { profileId }) => {
+    const success = await userManager.deleteProfile(profileId);
+    return { success };
+  });
+
+  ipcMain.handle('rename-profile', async (event, { profileId, newUsername }) => {
+    const profile = await userManager.renameProfile(profileId, newUsername);
+    return { success: true, profile };
+  });
+
+  ipcMain.handle('select-profile', async (event, { username }) => {
+    const profile = await userManager.selectProfile(username);
+    return { success: true, profile };
   });
 
   app.on('activate', () => {

@@ -6,6 +6,7 @@ import { toBMCLAPI, verifySHA1, ensureDir, getMinecraftDir, formatBytes, sleep }
 const CONCURRENCY = 32;
 const RETRY_DELAY_BASE = 2000;
 const MAX_RETRY_DELAY = 60000;
+const RATE_LIMIT_DELAY = 5000;
 
 class ThreadSafeQueue {
   constructor(items = []) {
@@ -59,6 +60,7 @@ export class DownloadManager extends EventEmitter {
     this.isRunning = false;
     this.isCancelled = false;
     this.concurrency = CONCURRENCY;
+    this.downloadedBytes = new Map();
   }
 
   addItem(item) {
@@ -109,10 +111,25 @@ export class DownloadManager extends EventEmitter {
           await this._downloadFile(item);
           success = true;
           this.completed.set(item.id, item);
-          this.downloadedSize += item.size;
+          this.downloadedBytes.delete(item.id);
+          this.emit('file-end', { workerId: id, id: item.id, path: item.path, retry: false });
         } catch (e) {
           retries++;
-          const delay = Math.min(RETRY_DELAY_BASE * Math.pow(2, retries - 1), MAX_RETRY_DELAY);
+          const downloadedForItem = this.downloadedBytes.get(item.id) || 0;
+          this.downloadedSize -= downloadedForItem;
+          this.downloadedBytes.delete(item.id);
+          this.emit('file-end', { workerId: id, id: item.id, path: item.path, retry: true });
+          
+          const downloadUrl = toBMCLAPI(item.url);
+          console.error(`[DOWNLOAD FAILED] File: ${item.path}, URL: ${downloadUrl}, SHA1: ${item.sha1}, Error: ${e.message}`);
+          
+          let delay = Math.min(RETRY_DELAY_BASE * Math.pow(2, retries - 1), MAX_RETRY_DELAY);
+          
+          if (e.message.includes('429')) {
+            delay = RATE_LIMIT_DELAY;
+            console.warn(`[RATE LIMIT] Waiting ${delay}ms before retry for ${item.path}`);
+          }
+          
           this.emit('retry', { id: item.id, path: item.path, attempt: retries, error: e.message, delay });
           
           if (!this.isCancelled) {
@@ -143,8 +160,7 @@ export class DownloadManager extends EventEmitter {
       return;
     }
 
-    const url = toBMCLAPI(item.url);
-    const response = await fetch(url);
+    let response = await this._fetchWithFallback(item.url);
     
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -157,6 +173,7 @@ export class DownloadManager extends EventEmitter {
     
     try {
       const reader = response.body.getReader();
+      this.downloadedBytes.set(item.id, 0);
       
       while (true) {
         const { done, value } = await reader.read();
@@ -164,6 +181,8 @@ export class DownloadManager extends EventEmitter {
         
         await file.write(Buffer.from(value));
         downloaded += value.length;
+        this.downloadedSize += value.length;
+        this.downloadedBytes.set(item.id, downloaded);
         
         this.emit('download-progress', {
           id: item.id,
@@ -179,12 +198,27 @@ export class DownloadManager extends EventEmitter {
 
     if (item.sha1 && !await verifySHA1(filePath, item.sha1)) {
       await fs.unlink(filePath).catch(() => {});
+      const downloadedForItem = this.downloadedBytes.get(item.id) || 0;
+      this.downloadedSize -= downloadedForItem;
+      this.downloadedBytes.delete(item.id);
       throw new Error('SHA1 verification failed');
     }
   }
 
   _calculateSpeed() {
     return this.downloadedSize;
+  }
+
+  async _fetchWithFallback(originalUrl) {
+    const bmclUrl = toBMCLAPI(originalUrl);
+    let response = await fetch(bmclUrl);
+    
+    if (response.status === 404) {
+      console.warn(`[BMCLAPI 404] Falling back to original URL: ${originalUrl}`);
+      response = await fetch(originalUrl);
+    }
+    
+    return response;
   }
 
   getStatus() {
@@ -204,21 +238,33 @@ export class DownloadManager extends EventEmitter {
 export async function downloadVersionManifest() {
   const { META_URL, toBMCLAPI } = await import('./utils.js');
   const url = toBMCLAPI(META_URL);
-  const response = await fetch(url);
+  let response = await fetch(url);
+  if (response.status === 404) {
+    console.warn(`[BMCLAPI 404] Falling back to original URL: ${META_URL}`);
+    response = await fetch(META_URL);
+  }
   if (!response.ok) throw new Error(`Failed to fetch version manifest: ${response.status}`);
   return response.json();
 }
 
 export async function downloadVersionJson(versionUrl) {
   const url = toBMCLAPI(versionUrl);
-  const response = await fetch(url);
+  let response = await fetch(url);
+  if (response.status === 404) {
+    console.warn(`[BMCLAPI 404] Falling back to original URL: ${versionUrl}`);
+    response = await fetch(versionUrl);
+  }
   if (!response.ok) throw new Error(`Failed to fetch version JSON: ${response.status}`);
   return response.json();
 }
 
 export async function downloadAssetIndex(assetIndexUrl) {
   const url = toBMCLAPI(assetIndexUrl);
-  const response = await fetch(url);
+  let response = await fetch(url);
+  if (response.status === 404) {
+    console.warn(`[BMCLAPI 404] Falling back to original URL: ${assetIndexUrl}`);
+    response = await fetch(assetIndexUrl);
+  }
   if (!response.ok) throw new Error(`Failed to fetch asset index: ${response.status}`);
   return response.json();
 }

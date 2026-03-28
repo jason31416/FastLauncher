@@ -74,6 +74,12 @@ export const useLauncherStore = defineStore('launcher', () => {
     newStatus[workerId] = { fileId: data.id, path: data.path };
     workerStatus.value = newStatus;
   }
+
+  function clearWorkerStatus(workerId) {
+    const newStatus = [...workerStatus.value];
+    newStatus[workerId] = { fileId: null, path: '' };
+    workerStatus.value = newStatus;
+  }
   
   function reset() {
     state.value = 'idle';
@@ -104,6 +110,7 @@ export const useLauncherStore = defineStore('launcher', () => {
     retryInfo,
     workerStatus,
     updateWorkerStatus,
+    clearWorkerStatus,
     isDownloading,
     isReady,
     isPlaying,

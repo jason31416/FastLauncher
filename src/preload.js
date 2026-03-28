@@ -6,6 +6,12 @@ const api = {
   cancelDownload: () => ipcRenderer.invoke('cancel-download'),
   getMinecraftDir: () => ipcRenderer.invoke('get-minecraft-dir'),
   
+  getProfiles: () => ipcRenderer.invoke('get-profiles'),
+  createProfile: (username) => ipcRenderer.invoke('create-profile', { username }),
+  deleteProfile: (profileId) => ipcRenderer.invoke('delete-profile', { profileId }),
+  renameProfile: (profileId, newUsername) => ipcRenderer.invoke('rename-profile', { profileId, newUsername }),
+  selectProfile: (username) => ipcRenderer.invoke('select-profile', { username }),
+  
   onStateChange: (callback) => {
     const handler = (event, data) => callback(data);
     ipcRenderer.on('state-change', handler);
@@ -28,6 +34,12 @@ const api = {
     const handler = (event, data) => callback(data);
     ipcRenderer.on('file-start', handler);
     return () => ipcRenderer.removeListener('file-start', handler);
+  },
+  
+  onFileEnd: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('file-end', handler);
+    return () => ipcRenderer.removeListener('file-end', handler);
   },
   
   onFileProgress: (callback) => {
