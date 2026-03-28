@@ -79,11 +79,20 @@ jobs:
 
           echo "✅ Build complete!"
 
-      - name: Upload artifacts
-        if: steps.build.outputs.status == 'success'
+      - name: Upload artifacts for windows
+        if: steps.build.outputs.status == 'success' && runner.os != 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.os }}-build
+          name: FastLauncher-${{ matrix.os }}
           path: out/make/
+          retention-days: 14
+          if-no-files-found: error  # 如果没有文件则报错
+
+      - name: Upload artifacts for mac
+        uses: actions/upload-artifact@v4
+        if: steps.build.outputs.status == 'success' && runner.os == 'macOS'
+        with:
+          name: FastLauncher--${{ matrix.os }}
+          path: out/FastLauncher-darwin-arm64
           retention-days: 14
           if-no-files-found: error  # 如果没有文件则报错
