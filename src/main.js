@@ -1,16 +1,11 @@
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import path from 'node:path';
-import started from 'electron-squirrel-startup';
 import { createVersionManager } from './main/version.js';
 import { DownloadManager } from './main/downloader.js';
 import { GameLauncher, createOfflineProfile } from './main/launcher.js';
 import { getMinecraftDir, ensureDir } from './main/utils.js';
 import { UserManager } from './main/userManager.js';
 import fs from 'fs/promises';
-
-if (started) {
-  app.quit();
-}
 
 Menu.setApplicationMenu(null);
 
