@@ -11,7 +11,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest] #, windows-latest]
         node-version: [22]
       fail-fast: false  # 允许其他平台继续构建即使某个失败
 
@@ -69,13 +69,13 @@ jobs:
           TEMP_DIR=$(mktemp -d)
           echo "📁 Temp directory: $TEMP_DIR"
           
-          la -la out/make/zip/darwin/arm64
+          ls -la out/make/zip/darwin/arm64
           
           # 解压 zip 文件
           echo "📂 Extracting zip..."
           unzip -q "$ZIP_PATH" -d "$TEMP_DIR"
           
-          la -la $TEMP_DIR
+          ls -la $TEMP_DIR
           
           # 查找 .app 文件
           APP_PATH=$(find "$TEMP_DIR" -name "*.app" -type d | head -1)
