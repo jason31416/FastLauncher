@@ -1,60 +1,43 @@
 name: Build Electron App
 
 on:
-  push:  # 任何 push 都触发
-  pull_request:  # 任何 PR 都触发
-  workflow_dispatch:  # 手动触发
-
-# 添加权限
-permissions:
-  contents: read
-  actions: write
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-      fail-fast: false
-    
+        os: [macos-latest, windows-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
+
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
           cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Build application
+
+      - name: Clean install dependencies
+        run: |
+          # 删除可能损坏的依赖
+          rm -rf node_modules package-lock.json
+          # 重新安装（不使用 cache，确保完整安装）
+          npm install
+          # 确保原生模块被正确构建
+          npm rebuild
+
+      - name: Build app
         run: npm run make
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 跳过代码签名（开发环境）
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-      
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.os }}-build-${{ github.sha }}
-          path: |
-            out/make/
-            !out/make/**/*.map
-          if-no-files-found: warn
+          name: ${{ matrix.os }}-build
+          path: out/make/
           retention-days: 7
-          compression-level: 6
-      
-      - name: List build files
-        if: always()
-        run: |
-          echo "Build files for ${{ matrix.os }}:"
-          find out/make -type f 2>/dev/null || echo "No build files found"
-        shell: bash
