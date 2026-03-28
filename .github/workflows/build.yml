@@ -54,6 +54,7 @@ jobs:
 
       # macOS 签名和打包
       - name: Sign and repackage macOS app
+        id: sign
         if: runner.os == 'macOS' && steps.build.outputs.status == 'success'
         run: |
           # 查找原始 zip 文件
@@ -124,7 +125,7 @@ jobs:
           echo "📦 Creating final zip..."
           ZIP_NAME="FastLauncher-macOS.zip"
           cd "$GITHUB_WORKSPACE/signed_output"
-          zip -r -y -9 "$ZIP_NAME" "FastLauncher.app"
+          zip -r -y -q -9 "$ZIP_NAME" "FastLauncher.app"
           mv "$ZIP_NAME" "$GITHUB_WORKSPACE/"
           
           echo "✅ Final zip created: $ZIP_NAME"
