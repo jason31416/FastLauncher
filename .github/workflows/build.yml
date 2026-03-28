@@ -54,6 +54,7 @@ jobs:
 
       # macOS 签名和打包
       - name: Sign and repackage macOS app
+        id: sign
         if: runner.os == 'macOS' && steps.build.outputs.status == 'success'
         run: |
           # 查找原始 zip 文件
@@ -113,15 +114,27 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/signed_output"
           mv "$APP_PATH" "$GITHUB_WORKSPACE/signed_output/"
           
-          # 8. 清理临时目录
-          cd "$GITHUB_WORKSPACE"
-          rm -rf "$TEMP_DIR"
+          # 重新打包成 zip（使用与原 zip 相同的压缩级别）
+          echo "📦 Creating final zip..."
+          ZIP_NAME="FastLauncher-macOS.zip"
+          cd "$GITHUB_WORKSPACE/signed_output"
+          zip -r -9 "$ZIP_NAME" "FastLauncher.app"
+          mv "$ZIP_NAME" "$GITHUB_WORKSPACE/"
           
-          echo "✅ Signed app repackaged successfully!"
-          du -h -d 1 "$GITHUB_WORKSPACE/signed_output/"
+          echo "✅ Final zip created: $ZIP_NAME"
+          du -h "$GITHUB_WORKSPACE/$ZIP_NAME"
           
-          # 设置输出路径
-          echo "signed_zip_path=$GITHUB_WORKSPACE/signed_output/$SIGNED_ZIP_NAME" >> $GITHUB_OUTPUT
+          # 设置输出路径（供后续上传使用）
+          echo "final_zip_path=$GITHUB_WORKSPACE/$ZIP_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload artifacts for mac
+        uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS' && steps.build.outputs.status == 'success'
+        with:
+          name: FastLauncher-macOS
+          path: ${{ steps.sign.outputs.final_zip_path }}   # 直接上传压缩后的 zip
+          retention-days: 14
+          if-no-files-found: error
 
       # Windows 打包
       - name: Package Windows executable
@@ -218,14 +231,5 @@ jobs:
         with:
           name: FastLauncher-Windows
           path: FastLauncher-windows*.zip
-          retention-days: 14
-          if-no-files-found: error
-
-      - name: Upload artifacts for mac
-        uses: actions/upload-artifact@v4
-        if: runner.os == 'macOS' && steps.build.outputs.status == 'success'
-        with:
-          name: FastLauncher-macOS
-          path: signed_output/
           retention-days: 14
           if-no-files-found: error
