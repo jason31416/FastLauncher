@@ -75,7 +75,7 @@ jobs:
           echo "📂 Extracting zip..."
           unzip -q "$ZIP_PATH" -d "$TEMP_DIR"
           
-          ls -la $TEMP_DIR
+          du -h $TEMP_DIR
           
           # 查找 .app 文件
           APP_PATH=$(find "$TEMP_DIR" -name "*.app" -type d | head -1)
@@ -107,15 +107,11 @@ jobs:
           echo "✅ Verifying signature..."
           codesign --verify --verbose "$APP_PATH"
           
-          # 6. 重新打包成 zip
-          echo "📦 Repackaging signed app..."
-          cd "$TEMP_DIR"
-          SIGNED_ZIP_NAME="FastLauncher-darwin-arm64-signed.zip"
-          zip -r -q "$SIGNED_ZIP_NAME" "$APP_NAME"
+          du -h $TEMP_DIR
           
           # 7. 创建输出目录并移动文件
           mkdir -p "$GITHUB_WORKSPACE/signed_output"
-          mv "$SIGNED_ZIP_NAME" "$GITHUB_WORKSPACE/signed_output/"
+          mv "$APP_PATH" "$GITHUB_WORKSPACE/signed_output/"
           
           # 8. 清理临时目录
           cd "$GITHUB_WORKSPACE"
