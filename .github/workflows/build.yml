@@ -9,29 +9,27 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [22]
 
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 25
+          node-version: ${{ matrix.node-version }}  # 现在使用 20
           cache: 'npm'
 
-      - name: Clean install dependencies
+      - name: Install dependencies
         shell: bash
         run: |
-          # 删除可能损坏的依赖
-          rm -rf node_modules package-lock.json
-          # 重新安装（不使用 cache，确保完整安装）
-          npm install
-          # 确保原生模块被正确构建
-          npm rebuild
+          # 不需要删除 node_modules，但确保版本正确
+          node --version
+          npm --version
+          npm ci
 
       - name: Build app
         run: npm run make
