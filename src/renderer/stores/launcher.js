@@ -21,6 +21,8 @@ export const useLauncherStore = defineStore('launcher', () => {
   const currentFile = ref('');
   const retryInfo = ref(null);
   const workerStatus = ref(Array.from({ length: 32 }, () => ({ fileId: null, path: '' })));
+
+  const completenessFlag = ref(true);
   
   const isDownloading = computed(() => state.value === 'downloading');
   const isReady = computed(() => state.value === 'ready');
@@ -59,6 +61,10 @@ export const useLauncherStore = defineStore('launcher', () => {
   
   function updateProgress(p) {
     progress.value = { ...progress.value, ...p };
+  }
+
+  function setCompleteness(completeness) {
+    completenessFlag.value = completeness;
   }
   
   function setCurrentFile(file) {
@@ -111,6 +117,8 @@ export const useLauncherStore = defineStore('launcher', () => {
     workerStatus,
     updateWorkerStatus,
     clearWorkerStatus,
+    completenessFlag,
+    setCompleteness,
     isDownloading,
     isReady,
     isPlaying,

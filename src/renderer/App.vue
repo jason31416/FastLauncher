@@ -14,58 +14,64 @@ let unsubscribers = [];
 
 onMounted(async () => {
   const api = window.launcherAPI;
-  
+
   if (!api) {
     console.error('launcherAPI not found on window');
     return;
   }
-  
+
   await loadProfiles();
-  
+
   unsubscribers.push(
-    api.onStateChange((data) => {
-      store.setState(data.state, data.message);
-      if (data.profile) {
-        store.setProfile(data.profile);
-      }
-    })
+      api.onStateChange((data) => {
+        store.setState(data.state, data.message);
+        if (data.profile) {
+          store.setProfile(data.profile);
+        }
+      })
   );
-  
+
   unsubscribers.push(
-    api.onVersionInfo((data) => {
-      store.setVersionInfo(data);
-    })
+      api.onVersionInfo((data) => {
+        store.setVersionInfo(data);
+      })
   );
-  
+
   unsubscribers.push(
-    api.onDownloadProgress((data) => {
-      store.updateProgress(data);
-    })
+      api.onDownloadProgress((data) => {
+        store.updateProgress(data);
+      })
   );
-  
+
   unsubscribers.push(
-    api.onFileStart((data) => {
-      store.setCurrentFile(data.path);
-      store.updateWorkerStatus(data.workerId, { id: data.id, path: data.path });
-    })
+      api.onFileStart((data) => {
+        store.setCurrentFile(data.path);
+        store.updateWorkerStatus(data.workerId, { id: data.id, path: data.path });
+      })
   );
-  
+
   unsubscribers.push(
-    api.onFileEnd((data) => {
-      store.clearWorkerStatus(data.workerId);
-    })
+      api.onFileEnd((data) => {
+        store.clearWorkerStatus(data.workerId);
+      })
   );
-  
+
   unsubscribers.push(
-    api.onDownloadRetry((data) => {
-      store.setRetryInfo(data);
-    })
+      api.onDownloadRetry((data) => {
+        store.setRetryInfo(data);
+      })
   );
-  
+
   unsubscribers.push(
-    api.onLauncherError((data) => {
-      store.setError(data.error);
-    })
+      api.onLauncherError((data) => {
+        store.setError(data.error);
+      })
+  );
+
+  unsubscribers.push(
+      api.onCompletenessChange((data) => {
+        store.setCompleteness(data.completeness);
+      })
   );
 });
 
@@ -135,28 +141,22 @@ async function cancelDownload() {
 <template>
   <div class="app">
     <TitleBar />
-    
+
     <main class="main-content">
-      
+
       <template v-if="store.state === 'idle'">
         <div class="idle-view">
-          <div class="logo-icon">
-            <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-              <rect width="56" height="56" rx="14" fill="#dbeafe"/>
-              <path d="M28 16L40 44H16L28 16Z" fill="#60a5fa" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <h1 class="title">Minecraft 1.21.1</h1>
+          <h1 class="title">FastLauncher</h1>
           <p class="subtitle">选择玩家档案开始游戏</p>
-          
+
           <div class="profile-section" v-if="profiles.length > 0 && !isCreatingProfile">
             <div class="profile-list">
-              <div 
-                v-for="profile in profiles" 
-                :key="profile.id"
-                class="profile-item"
-                :class="{ selected: username === profile.username }"
-                @click="selectProfile(profile.username)"
+              <div
+                  v-for="profile in profiles"
+                  :key="profile.id"
+                  class="profile-item"
+                  :class="{ selected: username === profile.username }"
+                  @click="selectProfile(profile.username)"
               >
                 <div class="profile-avatar">
                   <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -179,39 +179,39 @@ async function cancelDownload() {
               添加新档案
             </button>
           </div>
-          
+
           <div class="input-section" v-else-if="!isCreatingProfile">
-            <input 
-              v-model="username" 
-              placeholder="输入用户名"
-              @keyup.enter="startGame"
-              class="username-input"
+            <input
+                v-model="username"
+                placeholder="输入用户名"
+                @keyup.enter="startGame"
+                class="username-input"
             />
-            <button 
-              @click="startGame" 
-              :disabled="!username.trim()"
-              class="btn-primary"
+            <button
+                @click="startGame"
+                :disabled="!username.trim()"
+                class="btn-primary"
             >
               开始
             </button>
           </div>
-          
+
           <div class="create-profile-section" v-else>
-            <input 
-              v-model="newUsername" 
-              placeholder="输入新用户名"
-              @keyup.enter="createProfile"
-              class="username-input"
-              autofocus
+            <input
+                v-model="newUsername"
+                placeholder="输入新用户名"
+                @keyup.enter="createProfile"
+                class="username-input"
+                autofocus
             />
             <div class="create-actions">
               <button class="btn-outline btn-small" @click="isCreatingProfile = false; newUsername = ''">
                 取消
               </button>
-              <button 
-                class="btn-primary btn-small" 
-                @click="createProfile"
-                :disabled="!newUsername.trim()"
+              <button
+                  class="btn-primary btn-small"
+                  @click="createProfile"
+                  :disabled="!newUsername.trim()"
               >
                 创建
               </button>
@@ -219,7 +219,7 @@ async function cancelDownload() {
           </div>
         </div>
       </template>
-      
+
       <template v-else-if="store.state === 'checking'">
         <div class="status-view">
           <div class="spinner"></div>
@@ -227,51 +227,53 @@ async function cancelDownload() {
           <p class="status-hint">正在检查版本信息...</p>
         </div>
       </template>
-      
+
       <template v-else-if="store.state === 'downloading'">
         <div class="download-view">
           <div class="download-header">
-            <h2>正在下载</h2>
+            <h2 v-if="!store.completenessFlag">正在下载</h2>
+            <h2 v-else>检查文件完整性</h2>
+
             <span class="version-tag">{{ store.versionInfo?.id || '1.21.1' }}</span>
           </div>
-          
+
           <div class="progress-section">
             <div class="progress-bar">
               <div class="progress-fill" :style="{ width: store.progressPercent + '%' }"></div>
             </div>
             <div class="progress-info">
               <span class="progress-percent">{{ store.progressPercent }}%</span>
-              <span class="progress-size">{{ store.downloadedMB }} / {{ store.totalMB }} MB</span>
+              <span class="progress-size" v-if="!store.completenessFlag">{{ store.downloadedMB }} / {{ store.totalMB }} MB</span>
             </div>
           </div>
-          
+
           <div class="current-file" v-if="store.currentFile">
             <span class="file-label">当前文件:</span>
             <span class="file-name">{{ store.currentFile }}</span>
           </div>
-          
-          <div class="worker-section">
+
+          <div class="worker-section" v-if="!store.completenessFlag">
             <div class="worker-list">
-              <div 
-                v-for="(worker, index) in store.workerStatus" 
-                :key="index"
-                class="worker-item"
-                :class="{ 'active': worker.fileId }"
+              <div
+                  v-for="(worker, index) in store.workerStatus"
+                  :key="index"
+                  class="worker-item"
+                  :class="{ 'active': worker.fileId }"
               >
                 <span class="worker-id">#{{ index }}</span>
                 <span class="worker-file">{{ worker.fileId || '-' }}</span>
               </div>
             </div>
           </div>
-          
-          <div class="download-actions">
+
+          <div class="download-actions" v-if="!store.completenessFlag">
             <button @click="cancelDownload" class="btn-outline">
               取消
             </button>
           </div>
         </div>
       </template>
-      
+
       <template v-else-if="store.state === 'extracting'">
         <div class="status-view">
           <div class="spinner"></div>
@@ -279,34 +281,7 @@ async function cancelDownload() {
           <p class="status-hint">正在解压游戏文件...</p>
         </div>
       </template>
-      
-      <template v-else-if="store.state === 'ready'">
-        <div class="ready-view">
-          <div class="success-icon">
-            <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
-              <circle cx="32" cy="32" r="32" fill="#d1fae5"/>
-              <path d="M20 32L29 41L44 26" stroke="#34d399" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <h2 class="ready-title">准备就绪</h2>
-          
-          <div class="info-list">
-            <div class="info-item">
-              <span class="info-label">版本</span>
-              <span class="info-value">1.21.1</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">用户名</span>
-              <span class="info-value">{{ store.profile?.username || username }}</span>
-            </div>
-          </div>
-          
-          <button @click="launchGame" class="btn-primary btn-large">
-            启动游戏
-          </button>
-        </div>
-      </template>
-      
+
       <template v-else-if="store.state === 'launching'">
         <div class="status-view">
           <div class="spinner"></div>
@@ -314,7 +289,7 @@ async function cancelDownload() {
           <p class="status-hint">正在启动游戏客户端...</p>
         </div>
       </template>
-      
+
       <template v-else-if="store.state === 'playing'">
         <div class="status-view">
           <div class="success-icon">
@@ -327,7 +302,7 @@ async function cancelDownload() {
           <p class="status-hint">游戏窗口应该已经打开</p>
         </div>
       </template>
-      
+
       <template v-else-if="store.state === 'error'">
         <div class="error-view">
           <div class="error-icon">
@@ -343,7 +318,7 @@ async function cancelDownload() {
           </button>
         </div>
       </template>
-      
+
     </main>
   </div>
 </template>
@@ -735,6 +710,12 @@ async function cancelDownload() {
 .download-actions {
   display: flex;
   justify-content: center;
+}
+
+.status-view .success-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
 }
 
 .ready-view .success-icon {

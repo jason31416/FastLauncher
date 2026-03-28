@@ -1,8 +1,8 @@
 {
   "name": "fastlauncher",
-  "productName": "fastlauncher",
+  "productName": "FastLauncher",
   "version": "1.0.0",
-  "description": "My Electron application description",
+  "description": "A fast Minecraft launcher",
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
@@ -33,9 +33,11 @@
     "vite": "^5.4.21"
   },
   "dependencies": {
+    "@tailwindcss/vite": "^4.2.2",
     "adm-zip": "^0.5.16",
     "electron-squirrel-startup": "^1.0.1",
     "pinia": "^3.0.4",
+    "tailwindcss": "^4.2.2",
     "vue": "^3.5.31"
   }
 }

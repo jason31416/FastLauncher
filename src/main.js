@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { createVersionManager } from './main/version.js';
@@ -12,6 +12,8 @@ if (started) {
   app.quit();
 }
 
+Menu.setApplicationMenu(null);
+
 let mainWindow = null;
 let downloadManager = null;
 let versionManager = null;
@@ -24,12 +26,14 @@ const createWindow = () => {
     height: 520,
     resizable: false,
     frame: false,
+    title: 'FastLauncher',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  app.setName('FastLauncher');
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
@@ -97,7 +101,9 @@ async function startDownload(username) {
     const totalItems = libItems.length + assetItems.length + 1;
     sendToRenderer('state-change', { state: 'downloading', message: `正在下载 ${totalItems} 个文件...` });
     
-    await downloadManager.start();
+    await downloadManager.start((completeness) => {
+      sendToRenderer('completeness-change', { completeness });
+    });
     
     sendToRenderer('state-change', { state: 'extracting', message: '正在解压 natives...' });
     
@@ -118,9 +124,8 @@ async function startDownload(username) {
     launcher.on('exit', (code) => {
       console.log('[GAME EXIT]', code);
     });
-    
-    const profile = createOfflineProfile(username);
-    sendToRenderer('state-change', { state: 'ready', message: '准备启动', profile });
+
+    launchGame(username);
     
   } catch (error) {
     sendToRenderer('state-change', { state: 'error', message: error.message });
@@ -149,13 +154,16 @@ async function launchGame(username) {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'darwin') {
+    app.dock.setName('FastLauncher');
+  }
+  
   userManager = new UserManager();
   await userManager.load();
   
   createWindow();
 
   ipcMain.handle('start-download', async (event, { username }) => {
-    console.log('IPC start-download received, username:', username);
     try {
       await startDownload(username);
       return { success: true };

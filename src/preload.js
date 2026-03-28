@@ -59,6 +59,12 @@ const api = {
     ipcRenderer.on('launcher-error', handler);
     return () => ipcRenderer.removeListener('launcher-error', handler);
   },
+  
+  onCompletenessChange: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('completeness-change', handler);
+    return () => ipcRenderer.removeListener('completeness-change', handler);
+  },
 };
 
 const controlAPI = {

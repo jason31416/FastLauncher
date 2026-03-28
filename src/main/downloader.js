@@ -68,10 +68,13 @@ export class DownloadManager extends EventEmitter {
     this.totalSize += item.size;
   }
 
-  async start() {
+  async start(setCompleteness) {
     if (this.isRunning) return;
     this.isRunning = true;
     this.isCancelled = false;
+
+    setCompleteness(true);
+    this.setCompleteness = setCompleteness;
     
     const workers = [];
     for (let i = 0; i < this.concurrency; i++) {
@@ -159,6 +162,8 @@ export class DownloadManager extends EventEmitter {
     if (await verifySHA1(filePath, item.sha1)) {
       return;
     }
+
+    this.setCompleteness(false);
 
     let response = await this._fetchWithFallback(item.url);
     
