@@ -154,10 +154,6 @@ async function launchGame(username) {
 }
 
 app.whenReady().then(async () => {
-  if (process.platform === 'darwin') {
-    app.dock.setName('FastLauncher');
-  }
-  
   userManager = new UserManager();
   await userManager.load();
   
