@@ -20,10 +20,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 25
           cache: 'npm'
 
       - name: Clean install dependencies
+        shell: bash
         run: |
           # 删除可能损坏的依赖
           rm -rf node_modules package-lock.json
