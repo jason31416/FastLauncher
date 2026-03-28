@@ -69,9 +69,13 @@ jobs:
           TEMP_DIR=$(mktemp -d)
           echo "📁 Temp directory: $TEMP_DIR"
           
+          la -la out/make/zip/darwin/arm64
+          
           # 解压 zip 文件
           echo "📂 Extracting zip..."
           unzip -q "$ZIP_PATH" -d "$TEMP_DIR"
+          
+          la -la $TEMP_DIR
           
           # 查找 .app 文件
           APP_PATH=$(find "$TEMP_DIR" -name "*.app" -type d | head -1)
@@ -217,9 +221,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: FastLauncher-Windows
-          path: |
-            FastLauncher-windows*.zip
-            out/make/**/*.exe
+          path: FastLauncher-windows*.zip
           retention-days: 14
           if-no-files-found: error
 
