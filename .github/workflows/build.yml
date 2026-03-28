@@ -75,7 +75,7 @@ jobs:
           echo "📂 Extracting zip..."
           unzip -q "$ZIP_PATH" -d "$TEMP_DIR"
           
-          du -h $TEMP_DIR
+          du -h --max-depth=1 $TEMP_DIR
           
           # 查找 .app 文件
           APP_PATH=$(find "$TEMP_DIR" -name "*.app" -type d | head -1)
@@ -107,7 +107,7 @@ jobs:
           echo "✅ Verifying signature..."
           codesign --verify --verbose "$APP_PATH"
           
-          du -h $TEMP_DIR
+          du -h --max-depth=1 $TEMP_DIR
           
           # 7. 创建输出目录并移动文件
           mkdir -p "$GITHUB_WORKSPACE/signed_output"
@@ -118,7 +118,7 @@ jobs:
           rm -rf "$TEMP_DIR"
           
           echo "✅ Signed app repackaged successfully!"
-          ls -la "$GITHUB_WORKSPACE/signed_output/"
+          du -h --max-depth=1 "$GITHUB_WORKSPACE/signed_output/"
           
           # 设置输出路径
           echo "signed_zip_path=$GITHUB_WORKSPACE/signed_output/$SIGNED_ZIP_NAME" >> $GITHUB_OUTPUT
