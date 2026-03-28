@@ -2,7 +2,9 @@ name: Build Electron App
 
 on:
   push:
+    branches: [ main, master ]
   pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -11,9 +13,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node-version: [22]
+      fail-fast: false  # 允许其他平台继续构建即使某个失败
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45  # 增加超时时间
 
     steps:
       - uses: actions/checkout@v4
@@ -21,22 +24,39 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}  # 现在使用 20
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
-      - name: Install dependencies
-        shell: bash
+      - name: Display Node version
         run: |
           node --version
           npm --version
-          npm ci
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+        shell: bash
 
       - name: Build app
-        run: npm run make
+        id: build
+        run: |
+          npm run make
+          # 检查构建产物
+          if [ -d "out/make" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "Build artifacts created successfully"
+            ls -la out/make/
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "No build artifacts found"
+            exit 1
+          fi
+        shell: bash
 
       - name: Upload artifacts
+        if: steps.build.outputs.status == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}-build
           path: out/make/
           retention-days: 7
+          if-no-files-found: error  # 如果没有文件则报错
