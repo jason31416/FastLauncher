@@ -39,31 +39,5 @@
     "pinia": "^3.0.4",
     "tailwindcss": "^4.2.2",
     "vue": "^3.5.31"
-  },
-  "config": {
-    "forge": {
-      "packagerConfig": {
-        "executableName": "fastlauncher",
-        "name": "fastlauncher"
-      },
-      "makers": [
-        {
-          "name": "@electron-forge/maker-deb",
-          "config": {
-            "options": {
-              "name": "fastlauncher"
-            }
-          }
-        },
-        {
-          "name": "@electron-forge/maker-rpm",
-          "config": {
-            "options": {
-              "name": "fastlauncher"
-            }
-          }
-        }
-      ]
-    }
   }
 }
