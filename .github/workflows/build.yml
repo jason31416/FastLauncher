@@ -2,21 +2,13 @@ name: Build Electron App
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest]
-        node-version: [22]
-      fail-fast: false  # 允许其他平台继续构建即使某个失败
-
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45  # 增加超时时间
+    runs-on: macos-latest
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -24,39 +16,75 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22
           cache: 'npm'
-
-      - name: Display Node version
-        run: |
-          node --version
-          npm --version
 
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit
-        shell: bash
 
-      - name: Build app
-        id: build
+      - name: Build and sign app
         run: |
+          # 构建
           npm run make
-          # 检查构建产物
-          if [ -d "out/make" ]; then
-            echo "status=success" >> $GITHUB_OUTPUT
-            echo "Build artifacts created successfully"
-            ls -la out/make/
-          else
-            echo "status=failed" >> $GITHUB_OUTPUT
-            echo "No build artifacts found"
-            exit 1
-          fi
-        shell: bash
+          
+          # 查找 .app
+          APP_PATH=$(find out -name "*.app" -type d | head -1)
+          APP_NAME=$(basename "$APP_PATH")
+          
+          echo "📦 Found: $APP_PATH"
+          
+          # 1. 修复权限
+          echo "🔧 Fixing permissions..."
+          chmod -R 755 "$APP_PATH"
+          
+          # 2. 移除 quarantine 属性（如果有）
+          echo "🔧 Removing quarantine attributes..."
+          xattr -d com.apple.quarantine "$APP_PATH" 2>/dev/null || true
+          
+          # 3. 执行 ad-hoc 签名
+          echo "🔏 Signing with ad-hoc signature..."
+          codesign --force --deep --sign - "$APP_PATH"
+          
+          # 4. 验证签名
+          echo "✅ Verifying signature..."
+          codesign --verify --verbose "$APP_PATH"
+          
+          # 5. 打包成 zip，保留所有元数据
+          echo "📦 Creating zip archive..."
+          cd out/make
+          zip -r -y "${APP_NAME%.app}.zip" "$APP_NAME"
+          cd ../..
+          
+          # 6. 创建安装说明
+          cat > out/make/INSTALL.txt << 'EOF'
+          ===================================
+          FastLauncher - macOS Installation
+          ===================================
+          
+          If the app won't open after downloading:
+          
+          Option 1 - Right-click method:
+          1. Right-click (or Ctrl+click) on FastLauncher.app
+          2. Select "Open" from the menu
+          3. Click "Open" in the security dialog
+          
+          Option 2 - Terminal method:
+          Open Terminal and run:
+          
+          xattr -d com.apple.quarantine /path/to/FastLauncher.app
+          
+          Then double-click the app normally.
+          
+          Note: This is a development build without official Apple
+          notarization, so you'll see security warnings the first time.
+          EOF
+          
+          echo "✅ Build complete!"
 
       - name: Upload artifacts
-        if: steps.build.outputs.status == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.os }}-build
+          name: macos-build
           path: out/make/
-          retention-days: 7
-          if-no-files-found: error  # 如果没有文件则报错
+          retention-days: 14
+          if-no-files-found: error
