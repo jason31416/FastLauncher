@@ -216,14 +216,23 @@ export class DownloadManager extends EventEmitter {
 
   async _fetchWithFallback(originalUrl) {
     const bmclUrl = toBMCLAPI(originalUrl);
-    let response = await fetch(bmclUrl);
     
-    if (response.status === 404) {
-      console.warn(`[BMCLAPI 404] Falling back to original URL: ${originalUrl}`);
-      response = await fetch(originalUrl);
+    try {
+      let response = await fetch(bmclUrl);
+      
+      if (!response.ok && response.status !== 404) {
+        console.warn(`[BMCLAPI ERROR ${response.status}] Falling back to original URL: ${originalUrl}`);
+        response = await fetch(originalUrl);
+      } else if (response.status === 404) {
+        console.warn(`[BMCLAPI 404] Falling back to original URL: ${originalUrl}`);
+        response = await fetch(originalUrl);
+      }
+      
+      return response;
+    } catch (e) {
+      console.warn(`[BMCLAPI FETCH FAILED] Falling back to original URL: ${originalUrl}, Error: ${e.message}`);
+      return await fetch(originalUrl);
     }
-    
-    return response;
   }
 
   getStatus() {
