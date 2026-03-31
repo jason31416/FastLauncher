@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { app } from 'electron';
 import { platform, arch } from 'os';
+import { getCurrentPack } from './adapt';
 
 export const BMCLAPI_BASE = 'https://bmclapi2.bangbang93.com';
 export const META_URL = `${BMCLAPI_BASE}/mc/game/version_manifest_v2.json`;
@@ -35,12 +36,23 @@ export function toBMCLAPI(url) {
     .replace('https://resources.download.minecraft.net/', `${BMCLAPI_BASE}/assets/`);
 }
 
-export function getMinecraftDir() {
-  const home = app.getPath('home');
-  if (PLATFORM === 'windows') {
-    return path.join(process.env.APPDATA || home, 'fastlauncher');
+let mcDir = null;
+
+export function initMinecraftDir(customDir) {
+  if (customDir) {
+    mcDir = customDir;
   }
-  return path.join(home, 'Library', 'Application Support', 'fastlauncher', 'version', '1.21.1');
+}
+
+export function getBaseDir() {
+  if (!mcDir) {
+    throw new Error('Minecraft directory not configured. Please select a directory first.');
+  }
+  return mcDir;
+}
+
+export function getMinecraftDir() {
+  return path.join(getBaseDir(), getCurrentPack().id);
 }
 
 export async function ensureDir(dir) {
@@ -98,7 +110,7 @@ export function getOSNativesKey() {
 export function getGameArgs(gameArgs, profile) {
   const replacements = {
     '${auth_player_name}': profile.username,
-    '${version_name}': '1.21.1',
+    '${version_name}': getCurrentPack().id,
     '${game_directory}': getMinecraftDir(),
     '${assets_root}': path.join(getMinecraftDir(), 'assets'),
     '${assets_index_name}': '17',
@@ -129,7 +141,7 @@ export function getGameArgs(gameArgs, profile) {
 }
 
 export function getJVMArgs(jvmArgs) {
-  const nativeDir = path.join(getMinecraftDir(), 'natives', '1.21.1');
+  const nativeDir = path.join(getMinecraftDir(), 'natives', getCurrentPack().id);
   const replacements = {
     '${natives_directory}': nativeDir,
     '${launcher_name}': 'fastlauncher',

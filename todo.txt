@@ -1,0 +1,4 @@
+实现adapt 2.0协议支持
+现有安装流程改为当第一次确认下载完全完成后就不用每次都检查文件资源完整性了
+Fix: fabric data is not found
+Fix: Unable to copy and past any text in the launcher

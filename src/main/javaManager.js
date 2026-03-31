@@ -7,13 +7,13 @@ import { platform, arch } from 'os';
 import AdmZip from 'adm-zip';
 import crypto from 'crypto';
 import { EventEmitter } from 'events';
-import { ensureDir, formatBytes } from './utils.js';
+import { ensureDir, formatBytes, getBaseDir } from './utils.js';
 
-const JAVA_DIR = path.join(app.getPath('home'), '.fastlauncher', 'java');
+const getJavaDir = () => path.join(getBaseDir(), 'java');
+
 const ADOPTIUM_API = 'https://api.adoptium.net';
-
-const GITHUB_DIRECT = 'https://github.com';
-const PROXY_ORG = 'https://gh-proxy.org';
+const ADOPTIUM_GITHUB = 'https://github.com/adoptium/temurin25-binaries/releases/download';
+const TSINGHUA_MIRROR = 'https://mirrors.tuna.tsinghua.edu.cn/Adoptium';
 
 function getPlatform() {
   const p = platform();
@@ -26,8 +26,13 @@ function getPlatform() {
 function getArch() {
   const a = arch();
   if (a === 'x64') return 'x64';
-  if (a === 'arm64') return 'aarch64';
+  if (a === 'arm64' || a === 'aarch64') return 'aarch64';
   return a;
+}
+
+function getTsinghuaArch() {
+  const a = getArch();
+  return a === 'aarch64' ? 'aarch64' : 'x64';
 }
 
 function parseJavaVersion(output) {
@@ -36,37 +41,6 @@ function parseJavaVersion(output) {
   const version = match[1];
   const majorMatch = version.match(/^(\d+)/);
   return majorMatch ? parseInt(majorMatch[1], 10) : null;
-}
-
-async function pingUrl(url, timeout = 5000) {
-  const start = Date.now();
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-    await fetch(url, { method: 'HEAD', signal: controller.signal });
-    clearTimeout(timeoutId);
-    return Date.now() - start;
-  } catch (e) {
-    return Infinity;
-  }
-}
-
-async function findFastestMirror(url) {
-  console.log(`[JAVA] Pinging sources for: ${url}`);
-
-  const directLatency = await pingUrl(url);
-  console.log(`[JAVA] Direct latency: ${directLatency === Infinity ? 'timeout' : directLatency + 'ms'}`);
-
-  const proxyLatency = await pingUrl(`${PROXY_ORG}/${url}`);
-  console.log(`[JAVA] Proxy latency: ${proxyLatency === Infinity ? 'timeout' : proxyLatency + 'ms'}`);
-
-  if (directLatency <= proxyLatency) {
-    console.log('[JAVA] Using direct connection');
-    return { url, proxy: false };
-  } else {
-    console.log('[JAVA] Using proxy connection');
-    return { url: `${PROXY_ORG}/${url}`, proxy: true };
-  }
 }
 
 class JavaManager extends EventEmitter {
@@ -103,9 +77,9 @@ class JavaManager extends EventEmitter {
 
   async findLocalJava(requiredVersion) {
     try {
-      const entries = await fs.readdir(JAVA_DIR);
+      const entries = await fs.readdir(getJavaDir());
       for (const entry of entries) {
-        const javaPath = await this.findJavaInDir(path.join(JAVA_DIR, entry), requiredVersion);
+        const javaPath = await this.findJavaInDir(path.join(getJavaDir(), entry), requiredVersion);
         if (javaPath) {
           return javaPath;
         }
@@ -123,13 +97,13 @@ class JavaManager extends EventEmitter {
       path.join(dir, 'bin', 'java'),
       path.join(dir, 'Contents', 'Home', 'bin', 'java'),
     ];
-    
+
     for (const javaPath of patterns) {
       if (await this.validateJava(javaPath, requiredVersion)) {
         return javaPath;
       }
     }
-    
+
     try {
       const subdirs = await fs.readdir(dir);
       for (const subdir of subdirs) {
@@ -141,7 +115,7 @@ class JavaManager extends EventEmitter {
         }
       }
     } catch (e) {}
-    
+
     return null;
   }
 
@@ -188,11 +162,11 @@ class JavaManager extends EventEmitter {
       console.log(`[JAVA] Downloading ${fileName} (${formatBytes(size)})`);
 
       const tempPath = path.join(os.tmpdir(), fileName);
-      await this.downloadFile(url, tempPath, size, sha256);
+      await this.downloadFile(url, tempPath, size, sha256, version);
 
-      const installPath = path.join(JAVA_DIR, `jdk-${version}`);
-      await ensureDir(JAVA_DIR);
-      
+      const installPath = path.join(getJavaDir(), `jdk-${version}`);
+      await ensureDir(getJavaDir());
+
       this.emit('download-stage', { stage: '解压中...', progress: 0 });
       await this.extractJava(tempPath, installPath, fileName);
 
@@ -218,14 +192,14 @@ class JavaManager extends EventEmitter {
 
   async getReleaseInfo(version) {
     const os = getPlatform();
-    const arch = getArch();
+    const arch = getTsinghuaArch();
 
-    const url = `${ADOPTIUM_API}/v3/assets/latest/${version}/hotspot?architecture=${arch}&image_type=jdk&os=${os}&vendor=eclipse`;
+    const apiUrl = `${ADOPTIUM_API}/v3/assets/latest/${version}/hotspot?architecture=${arch}&image_type=jdk&os=${os}&vendor=eclipse`;
 
-    console.log(`[JAVA] Fetching release info from: ${url}`);
+    console.log(`[JAVA] Fetching release info from: ${apiUrl}`);
 
     try {
-      const response = await fetch(url);
+      const response = await fetch(apiUrl);
       if (!response.ok) {
         throw new Error(`API returned ${response.status}`);
       }
@@ -240,10 +214,15 @@ class JavaManager extends EventEmitter {
         throw new Error('No binary found in release');
       }
 
+      const releaseName = release.release_name || release.name;
       const fileName = pkg.link.split('/').pop();
+      const directUrl = pkg.link;
+
+      const tsinghuaUrl = `${TSINGHUA_MIRROR}/${version}/jdk/${arch}/${os}/${fileName}`;
 
       return {
-        url: pkg.link,
+        url: tsinghuaUrl,
+        fallbackUrl: directUrl,
         sha256: pkg.checksum,
         size: pkg.size,
         fileName: fileName
@@ -254,40 +233,52 @@ class JavaManager extends EventEmitter {
     }
   }
 
-  async downloadFile(url, destPath, totalSize, sha256) {
-    this.emit('download-stage', { stage: '测速中...', progress: 0 });
+  async downloadFile(url, destPath, totalSize, sha256, version) {
+    this.emit('download-stage', { stage: '下载中...', progress: 0 });
 
-    const mirror = await findFastestMirror(url);
-    const downloadUrl = mirror.url;
-    const downloadMethod = mirror.proxy ? '代理' : '直连';
+    await this.downloadWithFallback(url, destPath, totalSize, sha256, version);
+  }
 
-    this.emit('download-stage', { stage: `开始下载 (${downloadMethod})`, progress: 0 });
+  async downloadWithFallback(primaryUrl, destPath, totalSize, sha256, version) {
+    let lastError = null;
+    const urlsToTry = [primaryUrl];
 
-    let retries = 0;
-    const maxRetries = 3;
-    let response;
+    const fallbackUrl = `${ADOPTIUM_GITHUB}/${this._extractFileName(primaryUrl)}`;
+    if (!urlsToTry.includes(fallbackUrl)) {
+      urlsToTry.push(fallbackUrl);
+    }
 
-    while (retries < maxRetries) {
+    for (const downloadUrl of urlsToTry) {
       try {
-        response = await fetch(downloadUrl, { signal: AbortSignal.timeout(120000) });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        break;
+        console.log(`[JAVA] Attempting download from: ${downloadUrl}`);
+        this.emit('download-stage', { stage: `下载中 (${this._getSourceName(downloadUrl)})`, progress: 0 });
+
+        await this._downloadFile(downloadUrl, destPath, totalSize, sha256);
+        return;
       } catch (e) {
-        retries++;
-        console.error(`[JAVA] Download attempt ${retries} failed: ${e.message}`);
-
-        if (retries < maxRetries) {
-          const alternateUrl = mirror.proxy ? url : `${PROXY_ORG}/${url}`;
-          console.log(`[JAVA] Retrying with alternate URL: ${alternateUrl}`);
-          this.emit('download-retry', { attempt: retries, maxRetries, error: e.message });
-          await new Promise(r => setTimeout(r, 2000));
-          continue;
-        }
-
-        throw e;
+        console.error(`[JAVA] Download failed from ${downloadUrl}: ${e.message}`);
+        lastError = e;
+        continue;
       }
+    }
+
+    throw lastError || new Error('All download sources failed');
+  }
+
+  _extractFileName(url) {
+    return url.split('/').pop();
+  }
+
+  _getSourceName(url) {
+    if (url.includes('tsinghua')) return '清华镜像';
+    if (url.includes('github')) return 'GitHub 直连';
+    return '未知来源';
+  }
+
+  async _downloadFile(url, destPath, totalSize, sha256) {
+    const response = await fetch(url, { signal: AbortSignal.timeout(300000) });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
 
     const file = await fs.open(destPath, 'w');
@@ -310,8 +301,7 @@ class JavaManager extends EventEmitter {
         this.emit('download-progress', {
           downloaded,
           total: totalSize,
-          progress,
-          method: downloadMethod
+          progress
         });
       }
 
@@ -320,7 +310,7 @@ class JavaManager extends EventEmitter {
         throw new Error(`SHA256 校验失败`);
       }
 
-      console.log(`[JAVA] Download completed via ${downloadMethod}`);
+      console.log(`[JAVA] Download completed`);
       this.emit('download-stage', { stage: '下载完成', progress: 100 });
 
     } finally {
@@ -391,10 +381,10 @@ class JavaManager extends EventEmitter {
       hasJava: !!javaPath,
       javaPath,
       requiredVersion,
-      javaDir: JAVA_DIR
+      javaDir: getJavaDir()
     };
   }
 }
 
 export const javaManager = new JavaManager();
-export { JAVA_DIR };
+export { getJavaDir };

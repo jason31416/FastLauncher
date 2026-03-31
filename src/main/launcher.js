@@ -8,15 +8,17 @@ import { createHash, randomUUID } from 'crypto';
 import AdmZip from 'adm-zip';
 import { getMinecraftDir, getJVMArgs, getGameArgs, filterByOS, ensureDir } from './utils.js';
 import { javaManager } from './javaManager.js';
-import { FABRIC_ENABLED, FABRIC_MC_VERSION, getFabricClasspath } from './fabric.js';
+import { getFabricClasspath } from './fabric.js';
+import { getLauncherType } from './downloaders/index.js';
 
-const VERSION_ID = FABRIC_MC_VERSION;
+const VERSION_ID = '26.1';
 
 export class GameLauncher extends EventEmitter {
   constructor(versionJson, fabricData = null) {
     super();
     this.versionJson = versionJson;
     this.fabricData = fabricData;
+    this.versionId = versionJson.id;
     this.process = null;
     this.nativesDir = null;
   }
@@ -24,7 +26,7 @@ export class GameLauncher extends EventEmitter {
   async prepareNatives() {
     console.log('[LAUNCHER] prepareNatives started');
     const minecraftDir = getMinecraftDir();
-    this.nativesDir = path.join(minecraftDir, 'natives', VERSION_ID);
+    this.nativesDir = path.join(minecraftDir, 'natives', this.versionId);
     
     await ensureDir(this.nativesDir);
     console.log('[LAUNCHER] Natives dir:', this.nativesDir);
@@ -71,7 +73,7 @@ export class GameLauncher extends EventEmitter {
     
     const classpath = [];
     
-    if (FABRIC_ENABLED && this.fabricData) {
+    if (getLauncherType() === 'fabric' && this.fabricData) {
       const fabricClasspath = getFabricClasspath(this.fabricData, this.versionJson);
       classpath.push(...fabricClasspath);
       console.log('[LAUNCHER] Added', fabricClasspath.length, 'Fabric libraries to classpath');
@@ -85,7 +87,7 @@ export class GameLauncher extends EventEmitter {
       classpath.push(libPath);
     }
     
-    const clientJar = path.join(minecraftDir, 'versions', VERSION_ID, `${VERSION_ID}.jar`);
+    const clientJar = path.join(minecraftDir, 'versions', this.versionJson.jar, `${this.versionJson.jar}.jar`);
     classpath.push(clientJar);
     
     console.log('[LAUNCHER] Classpath has', classpath.length, 'entries');
@@ -223,7 +225,7 @@ export class GameLauncher extends EventEmitter {
       if (typeof arg === 'string') {
         const expanded = arg
           .replace(/\$\{auth_player_name\}/g, profile.username)
-          .replace(/\$\{version_name\}/g, VERSION_ID)
+          .replace(/\$\{version_name\}/g, this.versionId)
           .replace(/\$\{game_directory\}/g, getMinecraftDir())
           .replace(/\$\{assets_root\}/g, path.join(getMinecraftDir(), 'assets'))
           .replace(/\$\{assets_index_name\}/g, this.versionJson.assets)
@@ -237,7 +239,7 @@ export class GameLauncher extends EventEmitter {
           .replace(/\$\{resolution_height\}/g, '480')
           .replace(/\$\{quickPlayPath\}/g, '')
           .replace(/\$\{quickPlaySingleplayer\}/g, '')
-          .replace(/\$\{quickPlayMultiplayer\}/g, '')
+          .replace(/\$\{quickPlayMultiplayer\}/g, 'bmmc.cc')
           .replace(/\$\{quickPlayRealms\}/g, '');
         
         args.push(expanded);
@@ -246,7 +248,7 @@ export class GameLauncher extends EventEmitter {
           if (typeof a === 'string') {
             return a
               .replace(/\$\{auth_player_name\}/g, profile.username)
-              .replace(/\$\{version_name\}/g, VERSION_ID)
+              .replace(/\$\{version_name\}/g, this.versionId)
               .replace(/\$\{game_directory\}/g, getMinecraftDir())
               .replace(/\$\{assets_root\}/g, path.join(getMinecraftDir(), 'assets'))
               .replace(/\$\{assets_index_name\}/g, this.versionJson.assets)
@@ -260,7 +262,7 @@ export class GameLauncher extends EventEmitter {
               .replace(/\$\{resolution_height\}/g, '480')
               .replace(/\$\{quickPlayPath\}/g, '')
               .replace(/\$\{quickPlaySingleplayer\}/g, '')
-              .replace(/\$\{quickPlayMultiplayer\}/g, '')
+              .replace(/\$\{quickPlayMultiplayer\}/g, 'bmmc.cc')
               .replace(/\$\{quickPlayRealms\}/g, '');
           }
           return a;
@@ -312,7 +314,7 @@ export class GameLauncher extends EventEmitter {
             for (const val of arg.value) {
               const expanded = typeof val === 'string' ? val
                   .replace(/\$\{auth_player_name\}/g, profile.username)
-                  .replace(/\$\{version_name\}/g, VERSION_ID)
+          .replace(/\$\{version_name\}/g, this.versionId)
                   .replace(/\$\{game_directory\}/g, getMinecraftDir())
                   .replace(/\$\{assets_root\}/g, path.join(getMinecraftDir(), 'assets'))
                   .replace(/\$\{assets_index_name\}/g, this.versionJson.assets)
@@ -333,7 +335,7 @@ export class GameLauncher extends EventEmitter {
           } else if (typeof arg.value === 'string') {
             const expanded = arg.value
                 .replace(/\$\{auth_player_name\}/g, profile.username)
-                .replace(/\$\{version_name\}/g, VERSION_ID)
+              .replace(/\$\{version_name\}/g, this.versionId)
                 .replace(/\$\{game_directory\}/g, getMinecraftDir())
                 .replace(/\$\{assets_root\}/g, path.join(getMinecraftDir(), 'assets'))
                 .replace(/\$\{assets_index_name\}/g, this.versionJson.assets)
@@ -431,6 +433,11 @@ export class GameLauncher extends EventEmitter {
         stdoutBuffer.push(log);
         if (stdoutBuffer.length > 100) stdoutBuffer.shift();
         this.emit('stdout', log);
+
+        if (!gameStarted && log.includes('Minecraft')) {
+          gameStarted = true;
+          this.emit('game-started');
+        }
       });
 
       this.process.stderr.on('data', (data) => {
@@ -440,14 +447,6 @@ export class GameLauncher extends EventEmitter {
         console.log('[LAUNCHER] [STDERR]', log);
         this.emit('stderr', log);
       });
-
-      setTimeout(() => {
-        gameStarted = true;
-        console.log('[LAUNCHER] Game considered started');
-        this.emit('started');
-        this.process.unref();
-        resolve();
-      }, 5000);
     });
   }
 

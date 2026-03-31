@@ -1,9 +1,9 @@
 import path from 'path';
 import { downloadVersionManifest, downloadVersionJson, downloadAssetIndex, readVersionJsonCache } from './downloader.js';
 import { getMinecraftDir, getOSNativesKey, filterByOS } from './utils.js';
-import { FABRIC_ENABLED, FABRIC_MC_VERSION, getFabricData, buildFabricLibraryItems, buildFabricVersionJson } from './fabric.js';
+import { FABRIC_ENABLED, MINECRAFT_VERSION, getFabricData, buildFabricLibraryItems, buildFabricVersionJson } from './fabric.js';
 
-const VERSION_ID = FABRIC_MC_VERSION;
+const VERSION_ID = MINECRAFT_VERSION;
 
 export class VersionManager {
   constructor() {

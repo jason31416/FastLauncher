@@ -6,6 +6,10 @@ const api = {
   cancelDownload: () => ipcRenderer.invoke('cancel-download'),
   getMinecraftDir: () => ipcRenderer.invoke('get-minecraft-dir'),
   
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  saveSettings: (minecraftDir) => ipcRenderer.invoke('save-settings', { minecraftDir }),
+  selectDirectory: () => ipcRenderer.invoke('select-directory'),
+  
   checkJavaStatus: () => ipcRenderer.invoke('check-java'),
   downloadJava: (version) => ipcRenderer.invoke('download-java', { version }),
   
@@ -109,6 +113,7 @@ const api = {
 const controlAPI = {
   minimize: () => ipcRenderer.invoke('window-minimize'),
   close: () => ipcRenderer.invoke('window-close'),
+  hide: () => ipcRenderer.invoke('window-hide'),
 };
 
 contextBridge.exposeInMainWorld('launcherAPI', api);

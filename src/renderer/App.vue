@@ -2,8 +2,10 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useLauncherStore } from './stores/launcher.js';
 import TitleBar from './components/TitleBar.vue';
+import SetupScreen from './components/SetupScreen.vue';
 
 const store = useLauncherStore();
+const isFirstLaunch = ref(false);
 const username = ref('');
 const profiles = ref([]);
 const lastUsedUsername = ref('');
@@ -19,8 +21,6 @@ onMounted(async () => {
     console.error('launcherAPI not found on window');
     return;
   }
-
-  await loadProfiles();
 
   unsubscribers.push(
       api.onStateChange((data) => {
@@ -116,6 +116,14 @@ onMounted(async () => {
         store.setError(data.error);
       })
   );
+
+  const settings = await api.getSettings();
+  if (settings.firstLaunch) {
+    isFirstLaunch.value = true;
+    return;
+  }
+
+  await loadProfiles();
 });
 
 async function loadProfiles() {
@@ -163,6 +171,11 @@ async function selectProfile(profileUsername) {
   await window.launcherAPI.startDownload(profileUsername);
 }
 
+async function handleSetupComplete() {
+  isFirstLaunch.value = false;
+  await loadProfiles();
+}
+
 onUnmounted(() => {
   unsubscribers.forEach(unsub => unsub());
 });
@@ -190,8 +203,9 @@ async function cancelDownload() {
     <TitleBar />
 
     <main class="main-content">
+      <SetupScreen v-if="isFirstLaunch" @complete="handleSetupComplete" />
 
-      <template v-if="store.state === 'idle'">
+      <template v-else-if="store.state === 'idle'">
         <div class="idle-view">
           <h1 class="title">FastLauncher</h1>
           <p class="subtitle">选择玩家档案开始游戏</p>
@@ -278,10 +292,9 @@ async function cancelDownload() {
       <template v-else-if="store.state === 'downloading'">
         <div class="download-view">
           <div class="download-header">
-            <h2 v-if="!store.completenessFlag">正在下载</h2>
-            <h2 v-else>检查文件完整性</h2>
+            <h2>{{ store.message || (!store.completenessFlag ? '正在下载' : '检查文件完整性') }}</h2>
 
-            <span class="version-tag">{{ store.versionInfo?.id || '1.21.1' }}</span>
+            <span class="version-tag">{{ store.versionInfo?.id || 'unknown' }}</span>
           </div>
 
           <div class="progress-section">
@@ -290,7 +303,7 @@ async function cancelDownload() {
             </div>
             <div class="progress-info">
               <span class="progress-percent">{{ store.progressPercent }}%</span>
-              <span class="progress-size" v-if="!store.completenessFlag">{{ store.downloadedMB }} / {{ store.totalMB }} MB</span>
+              <span class="progress-size">{{ store.downloadedMB }} / {{ parseFloat(store.totalMB) }} MB</span>
             </div>
           </div>
 
@@ -299,7 +312,7 @@ async function cancelDownload() {
             <span class="file-name">{{ store.currentFile }}</span>
           </div>
 
-          <div class="worker-section" v-if="!store.completenessFlag">
+          <div class="worker-section">
             <div class="worker-list">
               <div
                   v-for="(worker, index) in store.workerStatus"

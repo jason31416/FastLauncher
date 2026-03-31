@@ -1,7 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { app } from 'electron';
 import { createHash, randomUUID } from 'crypto';
-import { getMinecraftDir, ensureDir } from './utils.js';
+import { ensureDir } from './utils.js';
 
 const PROFILES_FILE = 'launcher_profiles.json';
 
@@ -14,9 +15,13 @@ function createUUID(username) {
          hash.substring(20, 32);
 }
 
+function getProfilesPath() {
+  return path.join(app.getPath('userData'), PROFILES_FILE);
+}
+
 export class UserManager {
   constructor() {
-    this.profilesPath = path.join(getMinecraftDir(), PROFILES_FILE);
+    this.profilesPath = getProfilesPath();
     this.profiles = [];
     this.lastUsedUsername = null;
   }
@@ -42,7 +47,7 @@ export class UserManager {
 
   async save() {
     try {
-      await ensureDir(getMinecraftDir());
+      await ensureDir(app.getPath('userData'));
       const data = JSON.stringify({
         profiles: this.profiles,
         lastUsedUsername: this.lastUsedUsername

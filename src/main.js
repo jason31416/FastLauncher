@@ -1,18 +1,19 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, dialog } from 'electron';
 import path from 'node:path';
-import { createVersionManager } from './main/version.js';
-import { DownloadManager } from './main/downloader.js';
 import { GameLauncher, createOfflineProfile } from './main/launcher.js';
-import { getMinecraftDir, ensureDir } from './main/utils.js';
+import { getMinecraftDir, ensureDir, initMinecraftDir } from './main/utils.js';
 import { UserManager } from './main/userManager.js';
+import { loadSettings, saveSettings, getMinecraftDirFromSettings } from './main/settings.js';
 import { javaManager } from './main/javaManager.js';
+import { vanilla, fabric, awaitProcess, loadAssetCacheIndex, cancel, onProgress, onFileStart, onFileEnd, onRetry, onDownloadProgress, onComplete, getVersionInfo, getVersionJson, getFabricData, setFabricData, setLauncherType, buildFabricVersionJson } from './main/downloaders/index.js';
+import { checkFullyInstalled, markFullyInstalled } from './main/installStatus.js';
+
 import fs from 'fs/promises';
+import { getCurrentPack, installWithAdapt, testAdapt, getBaseVersion } from './main/adapt.js';
 
 Menu.setApplicationMenu(null);
 
 let mainWindow = null;
-let downloadManager = null;
-let versionManager = null;
 let launcher = null;
 let userManager = null;
 
@@ -44,66 +45,70 @@ function sendToRenderer(channel, data) {
   }
 }
 
-async function startDownload(username) {
-  console.log('startDownload called with username:', username);
+async function startDownload(username, version) {
+  console.log('startDownload called with username:', username, 'version:', version);
   try {
     sendToRenderer('state-change', { state: 'checking', message: '检查版本信息...' });
     
     await ensureDir(getMinecraftDir());
     
-    versionManager = await createVersionManager();
+    await loadAssetCacheIndex();
     
-    const versionInfo = versionManager.getVersionInfo();
-    sendToRenderer('version-info', versionInfo);
-    
-    downloadManager = new DownloadManager();
-    
-    downloadManager.on('file-start', ({ workerId, id, path }) => {
+    onFileStart(({ workerId, id, path }) => {
       sendToRenderer('file-start', { workerId, id, path });
     });
     
-    downloadManager.on('file-end', ({ workerId, id, path }) => {
+    onFileEnd(({ workerId, id, path }) => {
       sendToRenderer('file-end', { workerId, id, path });
     });
     
-    downloadManager.on('retry', ({ id, path, attempt, error, delay }) => {
+    onRetry(({ id, path, attempt, error, delay }) => {
       sendToRenderer('download-retry', { id, path, attempt, error, delay });
     });
     
-    downloadManager.on('progress', (status) => {
+    onProgress((status) => {
       sendToRenderer('download-progress', status);
     });
     
-    downloadManager.on('download-progress', ({ id, path, downloaded, total, speed }) => {
+    onDownloadProgress(({ id, path, downloaded, total, speed }) => {
       sendToRenderer('file-progress', { id, path, downloaded, total, speed });
     });
     
-    downloadManager.on('complete', () => {
+    onComplete(() => {
       sendToRenderer('state-change', { state: 'downloaded', message: '下载完成' });
     });
 
-    const libItems = versionManager.getDownloadList();
-    for (const item of libItems) {
-      downloadManager.addItem(item);
-    }
-    
-    await versionManager.fetchAssetIndex(downloadManager);
-    
-    const assetItems = versionManager.getAssetDownloadList();
-    for (const item of assetItems) {
-      downloadManager.addItem(item);
+    const packStatus = await checkFullyInstalled();
+    const alreadyInstalled = packStatus.fullyInstalled === true;
+
+    if (!alreadyInstalled) {
+      sendToRenderer('state-change', { state: 'downloading', message: '正在下载...' });
+      await installWithAdapt(getCurrentPack(), sendToRenderer);
+      
+      await markFullyInstalled({
+        mcVersion: getBaseVersion(),
+        fabricEnabled: !!getFabricData(),
+        fabricData: getFabricData()
+      });
     }
 
-    const totalItems = libItems.length + assetItems.length + 1;
-    sendToRenderer('state-change', { state: 'downloading', message: `正在下载 ${totalItems} 个文件...` });
+    sendToRenderer('state-change', { state: 'downloaded', message: '使用已安装版本' });
+
+    const launchStatus = await checkFullyInstalled();
+    const mcVersion = launchStatus.mcVersion;
     
-    await downloadManager.start((completeness) => {
-      sendToRenderer('completeness-change', { completeness });
-    });
+    if (launchStatus.fabricData) {
+      setFabricData(launchStatus.fabricData);
+      setLauncherType('fabric');
+    }
     
     sendToRenderer('state-change', { state: 'extracting', message: '正在解压 natives...' });
     
-    launcher = new GameLauncher(versionManager.getVersionJsonForLaunch(), versionManager.fabricData);
+    const versionJson = await getVersionJson(mcVersion);
+    const fabricDataForLauncher = getFabricData();
+    const finalVersionJson = fabricDataForLauncher ? buildFabricVersionJson(fabricDataForLauncher, versionJson) : versionJson;
+    
+    launcher = new GameLauncher(finalVersionJson, fabricDataForLauncher);
     
     launcher.on('stdout', (log) => {
       console.log('[GAME OUTPUT]', log);
@@ -119,6 +124,11 @@ async function startDownload(username) {
     
     launcher.on('exit', (code) => {
       console.log('[GAME EXIT]', code);
+    });
+
+    launcher.on('game-started', () => {
+      console.log('[MAIN] Game started, quitting launcher');
+      app.quit();
     });
 
     launchGame(username);
@@ -150,6 +160,9 @@ async function launchGame(username) {
 }
 
 app.whenReady().then(async () => {
+  const settings = await loadSettings();
+  initMinecraftDir(getMinecraftDirFromSettings());
+  
   userManager = new UserManager();
   await userManager.load();
   
@@ -157,11 +170,13 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('start-download', async (event, { username }) => {
     try {
-      await startDownload(username);
+      await startDownload(username, getCurrentPack().id);
       return { success: true };
     } catch (error) {
-      console.error('start-download error:', error);
+      console.error('[START-DOWNLOAD] Error:', error.message);
+      console.error('[START-DOWNLOAD] Stack:', error.stack);
       sendToRenderer('state-change', { state: 'error', message: error.message });
+      sendToRenderer('launcher-error', { error: error.message, stack: error.stack });
       return { success: false, error: error.message };
     }
   });
@@ -172,9 +187,7 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('cancel-download', async () => {
-    if (downloadManager) {
-      await downloadManager.cancel();
-    }
+    await cancel();
     return { success: true };
   });
 
@@ -182,8 +195,39 @@ app.whenReady().then(async () => {
     return getMinecraftDir();
   });
 
+  ipcMain.handle('get-settings', async () => {
+    return await loadSettings();
+  });
+
+  ipcMain.handle('save-settings', async (event, { minecraftDir }) => {
+    try {
+      const settings = await saveSettings({ minecraftDir, firstLaunch: false });
+      initMinecraftDir(minecraftDir);
+      return { success: true, settings };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('select-directory', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+      title: '选择 Minecraft 游戏目录'
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    return { success: true, path: result.filePaths[0] };
+  });
+
   ipcMain.handle('window-minimize', () => {
     if (mainWindow) mainWindow.minimize();
+  });
+
+  ipcMain.handle('window-hide', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.hide();
+    }
   });
 
   ipcMain.handle('window-close', () => {

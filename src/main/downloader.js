@@ -1,7 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { EventEmitter } from 'events';
-import { toBMCLAPI, verifySHA1, ensureDir, getMinecraftDir, formatBytes, sleep } from './utils.js';
+import { toBMCLAPI, verifySHA1, ensureDir, getMinecraftDir, getBaseDir, formatBytes, sleep } from './utils.js';
+import { checkFullyInstalled } from './installStatus.js';
 
 const CONCURRENCY = 32;
 const RETRY_DELAY_BASE = 2000;
@@ -61,6 +62,62 @@ export class DownloadManager extends EventEmitter {
     this.isCancelled = false;
     this.concurrency = CONCURRENCY;
     this.downloadedBytes = new Map();
+    this.assetCacheIndex = new Map();
+    this.assetIndexDirty = false;
+    this.assetIndexTimer = null;
+    this.skipIntegrityCheck = false;
+  }
+
+  async loadAssetCacheIndex() {
+    try {
+      const { app } = await import('electron');
+      const cachePath = path.join(app.getPath('userData'), 'cache', 'asset.json');
+      const data = await fs.readFile(cachePath, 'utf-8');
+      const parsed = JSON.parse(data);
+      this.assetCacheIndex = new Map(Object.entries(parsed));
+      console.log(`[ASSET INDEX] Loaded ${this.assetCacheIndex.size} entries`);
+    } catch {
+      this.assetCacheIndex = new Map();
+    }
+  }
+
+  async saveAssetCacheIndex() {
+    if (this.assetCacheIndex.size === 0) return;
+    try {
+      const { app } = await import('electron');
+      const cacheDir = path.join(app.getPath('userData'), 'cache');
+      await ensureDir(cacheDir);
+      const cachePath = path.join(cacheDir, 'asset.json');
+      const obj = Object.fromEntries(this.assetCacheIndex);
+      await fs.writeFile(cachePath, JSON.stringify(obj, null, 2), 'utf-8');
+      this.assetIndexDirty = false;
+    } catch (e) {
+      console.error('[ASSET INDEX] Save failed:', e.message);
+    }
+  }
+
+  _startAssetIndexTimer() {
+    this.assetIndexTimer = setInterval(async () => {
+      if (this.assetIndexDirty) {
+        await this.saveAssetCacheIndex();
+      }
+    }, 3000);
+  }
+
+  _stopAssetIndexTimer() {
+    if (this.assetIndexTimer) {
+      clearInterval(this.assetIndexTimer);
+      this.assetIndexTimer = null;
+    }
+  }
+
+  findAssetBySha1(sha1) {
+    return this.assetCacheIndex.get(sha1);
+  }
+
+  registerAssetToIndex(sha1, assetPath) {
+    this.assetCacheIndex.set(sha1, assetPath);
+    this.assetIndexDirty = true;
   }
 
   addItem(item) {
@@ -68,13 +125,13 @@ export class DownloadManager extends EventEmitter {
     this.totalSize += item.size;
   }
 
-  async start(setCompleteness) {
+  async start() {
     if (this.isRunning) return;
     this.isRunning = true;
     this.isCancelled = false;
+    this._startAssetIndexTimer();
 
-    setCompleteness(true);
-    this.setCompleteness = setCompleteness;
+    this.skipIntegrityCheck = await checkFullyInstalled();
     
     const workers = [];
     for (let i = 0; i < this.concurrency; i++) {
@@ -82,12 +139,16 @@ export class DownloadManager extends EventEmitter {
     }
     
     await Promise.all(workers);
+    this._stopAssetIndexTimer();
     this.isRunning = false;
+    await this.saveAssetCacheIndex();
     this.emit('complete');
   }
 
   async cancel() {
     this.isCancelled = true;
+    this._stopAssetIndexTimer();
+    await this.saveAssetCacheIndex();
   }
 
   async _worker(id) {
@@ -159,11 +220,47 @@ export class DownloadManager extends EventEmitter {
     const filePath = path.join(getMinecraftDir(), item.path);
     await ensureDir(path.dirname(filePath));
 
-    if (await verifySHA1(filePath, item.sha1)) {
-      return;
+    if (item.type === 'assets' && item.sha1) {
+      const existingPath = this.findAssetBySha1(item.sha1);
+      if (existingPath) {
+        const srcPath = existingPath;
+        try {
+          await fs.access(srcPath);
+          await fs.copyFile(srcPath, filePath);
+          this.downloadedSize += item.size;
+          return;
+        } catch {
+          // Source doesn't exist, continue with download
+        }
+      }
     }
 
-    this.setCompleteness(false);
+    if (item.sha1) {
+      if (this.skipIntegrityCheck) {
+        try {
+          await fs.access(filePath);
+          this.registerAssetToIndex(item.sha1, path.join(getMinecraftDir(), item.path));
+          this.downloadedSize += item.size;
+          return;
+        } catch {
+          // File doesn't exist, continue with download
+        }
+      } else if (await verifySHA1(filePath, item.sha1)) {
+        this.registerAssetToIndex(item.sha1, path.join(getMinecraftDir(), item.path));
+        this.downloadedSize += item.size;
+        return;
+      }
+    } else {
+      try {
+        await fs.access(filePath);
+        this.downloadedSize += item.size || 0;
+        return;
+      } catch {
+        // File doesn't exist, continue with download
+      }
+    }
+
+
 
     let response = await this._fetchWithFallback(item.url);
     
@@ -201,7 +298,7 @@ export class DownloadManager extends EventEmitter {
       await file.close();
     }
 
-    if (item.sha1 && !await verifySHA1(filePath, item.sha1)) {
+    if (item.sha1 && !this.skipIntegrityCheck && !await verifySHA1(filePath, item.sha1)) {
       await fs.unlink(filePath).catch(() => {});
       const downloadedForItem = this.downloadedBytes.get(item.id) || 0;
       this.downloadedSize -= downloadedForItem;
@@ -262,8 +359,7 @@ export async function downloadVersionManifest() {
 }
 
 async function getVersionJsonCachePath(versionId) {
-  const { app } = await import('electron');
-  const cacheDir = path.join(app.getPath('userData'), 'cache', 'versions');
+  const cacheDir = path.join(getMinecraftDir(), 'cache', 'versions');
   return path.join(cacheDir, `${versionId}.json`);
 }
 
@@ -279,9 +375,8 @@ export async function readVersionJsonCache(versionId) {
   }
 }
 
-async function writeVersionJsonCache(versionId, versionJson) {
-  const { app } = await import('electron');
-  const cacheDir = path.join(app.getPath('userData'), 'cache', 'versions');
+export async function writeVersionJsonCache(versionId, versionJson) {
+  const cacheDir = path.join(getMinecraftDir(), 'cache', 'versions');
   await ensureDir(cacheDir);
   const cachePath = await getVersionJsonCachePath(versionId);
   console.log(`[VERSION CACHE] Write to: ${cachePath}`);

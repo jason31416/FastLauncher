@@ -1,8 +1,10 @@
 import path from 'path';
 import { getMinecraftDir } from './utils.js';
 
-export const FABRIC_ENABLED = true;
-export const FABRIC_MC_VERSION = '1.21.1';
+const MINECRAFT_VERSION = '26.1';
+const FABRIC_ENABLED = false;
+
+export { MINECRAFT_VERSION, FABRIC_ENABLED };
 
 const FABRIC_API_BASE = 'https://meta.fabricmc.net';
 const FABRIC_MAVEN_BASE = 'https://maven.fabricmc.net/';
