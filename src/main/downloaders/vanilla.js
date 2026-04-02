@@ -1,10 +1,15 @@
 import path from 'path';
 import { downloadVersionManifest, downloadVersionJson, downloadAssetIndex, readVersionJsonCache, writeVersionJsonCache } from '../downloader.js';
-import { getMinecraftDir, getOSNativesKey, filterByOS, toBMCLAPI } from '../utils.js';
+import { getMinecraftDir, getOSNativesKey, filterByOS } from '../utils.js';
 import { addItem } from './queue.js';
 
+/** In-memory cache for version JSONs, keyed by version ID */
 let _versionJsonCache = new Map();
 
+/**
+ * Queue all downloads for a vanilla Minecraft version.
+ * Downloads: version manifest, version JSON, asset index, client JAR, libraries, natives, assets.
+ */
 export async function download(versionId) {
   await ensureVersionManifest();
   const versionJson = await fetchVersionJson(versionId);
@@ -13,6 +18,7 @@ export async function download(versionId) {
   buildAndQueueAssetDownloads(assetIndex.objects);
 }
 
+/** Fetch and cache the Minecraft version manifest (list of all versions) */
 async function ensureVersionManifest() {
   const cached = await readVersionJsonCache('manifest');
   if (cached) {
@@ -25,6 +31,7 @@ async function ensureVersionManifest() {
   return manifest;
 }
 
+/** Find version JSON from manifest, download if not cached */
 async function fetchVersionJson(versionId) {
   if (_versionJsonCache.has(versionId)) {
     return _versionJsonCache.get(versionId);
@@ -39,6 +46,7 @@ async function fetchVersionJson(versionId) {
   return versionJson;
 }
 
+/** Queue the asset index JSON download and return the parsed index */
 async function fetchAssetIndex(versionId) {
   const versionJson = _versionJsonCache.get(versionId);
   if (!versionJson) return null;
@@ -55,6 +63,7 @@ async function fetchAssetIndex(versionId) {
   return await downloadAssetIndex(assetIndex.url, assetIndex.id);
 }
 
+/** Queue client JAR and all library/native downloads for the version */
 function buildAndQueueLibDownloads(versionJson) {
   if (!versionJson) return;
   const versionId = versionJson.id;
@@ -110,6 +119,7 @@ function buildAndQueueLibDownloads(versionJson) {
   }
 }
 
+/** Queue all asset object downloads (textures, sounds, etc.) */
 function buildAndQueueAssetDownloads(objects) {
   if (!objects) return;
   for (const [assetPath, assetInfo] of Object.entries(objects)) {
@@ -126,6 +136,7 @@ function buildAndQueueAssetDownloads(objects) {
   }
 }
 
+/** Get version info for UI display (does not download) */
 export function getVersionInfo(versionId) {
   const versionJson = _versionJsonCache.get(versionId);
   if (!versionJson) return null;
@@ -139,6 +150,7 @@ export function getVersionInfo(versionId) {
   };
 }
 
+/** Get raw version JSON from memory or disk cache (does not download) */
 export async function getVersionJson(versionId) {
   if (_versionJsonCache.has(versionId)) {
     return _versionJsonCache.get(versionId);
@@ -150,3 +162,5 @@ export async function getVersionJson(versionId) {
   }
   return null;
 }
+
+

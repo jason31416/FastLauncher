@@ -15,7 +15,7 @@ npm start        # Development mode (Electron + Vite dev servers)
 npm run package  # Package app as unsigned .app
 npm run make     # Create distributable installer
 npm run publish  # Publish to GitHub Releases
-npm run lint     # No linting configured (echo only)
+npm run lint     # Run ESLint (eslint src --ext .js,.vue)
 ```
 
 **No test framework configured.**
@@ -31,21 +31,19 @@ src/
 ├── renderer.js          # Vue app entry point
 ├── index.css            # Global styles + Tailwind
 ├── main/
-│   ├── constants.js     # MINECRAFT_VERSION, FABRIC_ENABLED toggles
 │   ├── downloader.js    # DownloadManager class, caching utilities
 │   ├── downloaders/     # Modular download system
 │   │   ├── index.js    # Public API exports
 │   │   ├── queue.js     # Shared DownloadManager singleton
 │   │   ├── vanilla.js  # Vanilla Minecraft download module
-│   │   ├── fabric.js   # Fabric modloader download module
-│   │   └── example.js  # Reference download flow examples
+│   │   └── fabric.js   # Fabric modloader download module
 │   ├── launcher.js     # GameLauncher class, JVM args, native extraction
 │   ├── fabric.js        # Fabric integration (mainClass, classpath)
 │   ├── javaManager.js  # Java download/installation
 │   ├── settings.js      # Settings persistence
 │   ├── userManager.js  # Profile management
 │   ├── utils.js        # Utilities, path helpers, platform detection
-│   └── version.js      # VersionManager class (legacy)
+│   └── adapt.js        # Pack installation adapter
 └── renderer/
     ├── App.vue          # Main Vue component
     ├── components/      # Vue components
@@ -137,16 +135,6 @@ onFileStart(({ workerId, id, path }) => sendToRenderer('file-start', { workerId,
 onComplete(() => sendToRenderer('state-change', { state: 'downloaded' }));
 ```
 
-### Example Download Flow (`src/main/downloaders/example.js`)
-```javascript
-export async function downloadWithFabric(mcVersion, fabricVersion) {
-  await loadAssetCacheIndex();
-  await vanilla.download(mcVersion);
-  await fabric.download(`${mcVersion}:${fabricVersion}`);
-  await awaitProcess();
-}
-```
-
 ### Queue Management
 ```javascript
 import { getManager, addItem, cancel } from './main/downloaders/index.js';
@@ -206,16 +194,16 @@ SHA1 verification: Files with `sha1: null` are re-downloaded if size is 0.
 
 ## Modloader Support
 
-### Fabric Configuration (`src/main/constants.js`)
+### Fabric Configuration (`src/main/fabric.js`)
 ```javascript
-export const MINECRAFT_VERSION = '26.1';
-export const FABRIC_ENABLED = false;
+const MINECRAFT_VERSION = '26.1';
+const FABRIC_ENABLED = false;
 ```
 
 ### Adding a New Modloader (e.g., Forge)
 1. Create `src/main/{modloader}.js` with version fetching and library building
 2. Create `src/main/downloaders/{modloader}.js` for download module
-3. Add `{MODLOADER}_ENABLED` and `{MODLOADER}_MC_VERSION` to constants.js
+3. Add `{MODLOADER}_ENABLED` and `{MODLOADER}_MC_VERSION` to fabric.js
 4. Export download function and build functions
 5. Integrate in main.js download flow
 

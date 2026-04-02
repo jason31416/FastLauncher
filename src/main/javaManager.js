@@ -2,7 +2,6 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
-import { app } from 'electron';
 import { platform, arch } from 'os';
 import AdmZip from 'adm-zip';
 import crypto from 'crypto';
@@ -43,6 +42,10 @@ function parseJavaVersion(output) {
   return majorMatch ? parseInt(majorMatch[1], 10) : null;
 }
 
+/**
+ * Manages Java detection, download, and installation.
+ * Uses Adoptium/Temurin builds with Tsinghua mirror and GitHub fallback.
+ */
 class JavaManager extends EventEmitter {
   constructor() {
     super();
@@ -50,6 +53,10 @@ class JavaManager extends EventEmitter {
     this.isDownloading = false;
   }
 
+  /**
+   * Find or download Java of the required version.
+   * Checks JAVA_HOME env var first, then local installations, then downloads.
+   */
   async ensureJava(requiredVersion = 17) {
     const existingJava = await this.findJava(requiredVersion);
     if (existingJava) {
@@ -58,6 +65,7 @@ class JavaManager extends EventEmitter {
     return this.downloadAndInstallJava(requiredVersion);
   }
 
+  /** Search for a valid Java installation (JAVA_HOME, then local java dir) */
   async findJava(requiredVersion = 17) {
     const javaHome = process.env.JAVA_HOME;
     if (javaHome) {
@@ -75,6 +83,7 @@ class JavaManager extends EventEmitter {
     return null;
   }
 
+  /** Scan the local java directory for a valid installation */
   async findLocalJava(requiredVersion) {
     try {
       const entries = await fs.readdir(getJavaDir());
@@ -92,6 +101,7 @@ class JavaManager extends EventEmitter {
     return null;
   }
 
+  /** Check common Java paths in a directory and recurse into subdirs */
   async findJavaInDir(dir, requiredVersion) {
     const patterns = [
       path.join(dir, 'bin', 'java'),
@@ -114,11 +124,12 @@ class JavaManager extends EventEmitter {
           if (found) return found;
         }
       }
-    } catch (e) {}
+    } catch {}
 
     return null;
   }
 
+  /** Validate that javaPath exists and meets the minimum version requirement */
   async validateJava(javaPath, requiredVersion) {
     try {
       await fs.access(javaPath);
@@ -133,6 +144,7 @@ class JavaManager extends EventEmitter {
     return false;
   }
 
+  /** Run `java -version` and parse the major version number */
   async getJavaVersion(javaPath) {
     return new Promise((resolve) => {
       const proc = spawn(javaPath, ['-version'], { stdio: 'pipe' });
@@ -144,6 +156,7 @@ class JavaManager extends EventEmitter {
     });
   }
 
+  /** Download and install a specific Java version to the local java directory */
   async downloadAndInstallJava(version = 17) {
     if (this.isDownloading) {
       throw new Error('Java download already in progress');
@@ -190,6 +203,7 @@ class JavaManager extends EventEmitter {
     }
   }
 
+  /** Query Adoptium API for release info, prefer Tsinghua mirror URL */
   async getReleaseInfo(version) {
     const os = getPlatform();
     const arch = getTsinghuaArch();
@@ -214,7 +228,6 @@ class JavaManager extends EventEmitter {
         throw new Error('No binary found in release');
       }
 
-      const releaseName = release.release_name || release.name;
       const fileName = pkg.link.split('/').pop();
       const directUrl = pkg.link;
 
@@ -239,7 +252,8 @@ class JavaManager extends EventEmitter {
     await this.downloadWithFallback(url, destPath, totalSize, sha256, version);
   }
 
-  async downloadWithFallback(primaryUrl, destPath, totalSize, sha256, version) {
+  /** Try primary URL first (Tsinghua mirror), then fallback to GitHub direct */
+  async downloadWithFallback(primaryUrl, destPath, totalSize, sha256, _version) {
     let lastError = null;
     const urlsToTry = [primaryUrl];
 
@@ -318,6 +332,7 @@ class JavaManager extends EventEmitter {
     }
   }
 
+  /** Extract JDK from zip (with root directory stripping) or tar.gz */
   async extractJava(zipPath, destPath, fileName) {
     console.log(`[JAVA] Extracting ${fileName} to ${destPath}`);
 
@@ -373,6 +388,7 @@ class JavaManager extends EventEmitter {
     });
   }
 
+  /** Get current Java status for UI display */
   async getJavaInfo() {
     const requiredVersion = 17;
     const javaPath = await this.findJava(requiredVersion);

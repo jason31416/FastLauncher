@@ -1,7 +1,6 @@
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
-import { app } from 'electron';
 import { platform, arch } from 'os';
 import { getCurrentPack } from './adapt';
 
@@ -105,71 +104,6 @@ export function getOSNativesKey() {
     'linux': PLATFORM === 'linux' ? (ARCH === 'aarch_64' ? 'natives-linux-arm64' : 'natives-linux') : null,
   };
   return keys[PLATFORM];
-}
-
-export function getGameArgs(gameArgs, profile) {
-  const replacements = {
-    '${auth_player_name}': profile.username,
-    '${version_name}': getCurrentPack().id,
-    '${game_directory}': getMinecraftDir(),
-    '${assets_root}': path.join(getMinecraftDir(), 'assets'),
-    '${assets_index_name}': '17',
-    '${auth_uuid}': profile.uuid,
-    '${auth_access_token}': profile.accessToken,
-    '${clientid}': profile.clientId,
-    '${auth_xuid}': '',
-    '${user_type}': profile.userType,
-    '${version_type}': 'release',
-    '${resolution_width}': '854',
-    '${resolution_height}': '480',
-    '${quickPlayPath}': '',
-    '${quickPlaySingleplayer}': '',
-    '${quickPlayMultiplayer}': '',
-    '${quickPlayRealms}': '',
-  };
-
-  return gameArgs.map(arg => {
-    if (typeof arg === 'string') {
-      let result = arg;
-      for (const [key, value] of Object.entries(replacements)) {
-        result = result.replace(key, value);
-      }
-      return result;
-    }
-    return arg;
-  });
-}
-
-export function getJVMArgs(jvmArgs) {
-  const nativeDir = path.join(getMinecraftDir(), 'natives', getCurrentPack().id);
-  const replacements = {
-    '${natives_directory}': nativeDir,
-    '${launcher_name}': 'fastlauncher',
-    '${launcher_version}': '1.0.0',
-  };
-
-  return jvmArgs.map(arg => {
-    if (typeof arg === 'string') {
-      let result = arg;
-      for (const [key, value] of Object.entries(replacements)) {
-        result = result.replace(key, value);
-      }
-      return result;
-    }
-    if (Array.isArray(arg)) {
-      return arg.map(a => {
-        if (typeof a === 'string') {
-          let result = a;
-          for (const [key, value] of Object.entries(replacements)) {
-            result = result.replace(key, value);
-          }
-          return result;
-        }
-        return a;
-      });
-    }
-    return arg;
-  }).flat();
 }
 
 export function filterByOS(rules) {

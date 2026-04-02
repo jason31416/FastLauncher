@@ -1,18 +1,17 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs/promises';
-import { createWriteStream } from 'fs';
-import os from 'os';
 import { EventEmitter } from 'events';
 import { createHash, randomUUID } from 'crypto';
 import AdmZip from 'adm-zip';
-import { getMinecraftDir, getJVMArgs, getGameArgs, filterByOS, ensureDir } from './utils.js';
+import { getMinecraftDir, filterByOS, ensureDir } from './utils.js';
 import { javaManager } from './javaManager.js';
 import { getFabricClasspath } from './fabric.js';
 import { getLauncherType } from './downloaders/index.js';
 
-const VERSION_ID = '26.1';
-
+/**
+ * Handles preparing natives, building arguments, and spawning the Minecraft process.
+ */
 export class GameLauncher extends EventEmitter {
   constructor(versionJson, fabricData = null) {
     super();
@@ -23,6 +22,7 @@ export class GameLauncher extends EventEmitter {
     this.nativesDir = null;
   }
 
+  /** Extract native libraries (lwjgl, OpenAL, etc.) to a temp directory */
   async prepareNatives() {
     console.log('[LAUNCHER] prepareNatives started');
     const minecraftDir = getMinecraftDir();
@@ -50,7 +50,6 @@ export class GameLauncher extends EventEmitter {
 
     for (const { classifier } of natives) {
       const nativePath = path.join(getMinecraftDir(), 'libraries', classifier.path);
-      const nativeFile = path.join(this.nativesDir, path.basename(classifier.path));
       
       try {
         const stat = await fs.stat(nativePath);
@@ -67,6 +66,7 @@ export class GameLauncher extends EventEmitter {
     return this.nativesDir;
   }
 
+  /** Build the Java classpath: fabric libs + vanilla libs + client JAR */
   buildClasspath() {
     const minecraftDir = getMinecraftDir();
     const separator = process.platform === 'windows' ? ';' : ':';
@@ -81,13 +81,17 @@ export class GameLauncher extends EventEmitter {
     
     for (const lib of this.versionJson.libraries) {
       if (!filterByOS(lib.rules)) continue;
-      if (!lib.downloads?.artifact) continue;
-      
+      if (!lib.downloads?.artifact?.path) {
+        if (lib.name) console.warn('[LAUNCHER] Skipping library with missing artifact path:', lib.name);
+        continue;
+      }
+
       const libPath = path.join(minecraftDir, 'libraries', lib.downloads.artifact.path);
       classpath.push(libPath);
     }
-    
-    const clientJar = path.join(minecraftDir, 'versions', this.versionJson.jar, `${this.versionJson.jar}.jar`);
+
+    const jarId = this.versionJson.jar || this.versionJson.id;
+    const clientJar = path.join(minecraftDir, 'versions', jarId, `${jarId}.jar`);
     classpath.push(clientJar);
     
     console.log('[LAUNCHER] Classpath has', classpath.length, 'entries');
@@ -96,6 +100,11 @@ export class GameLauncher extends EventEmitter {
     return classpath.join(separator);
   }
 
+  /**
+   * Build JVM arguments from version JSON, expanding placeholders and filtering by OS rules.
+   * Skips -cp/-classpath entries (handled separately), strips HeapDumpPath on non-Windows.
+   * Appends macOS-specific args and custom memory/Garbage Collector settings.
+   */
   buildJvmArgs() {
     const args = [];
     const jvmArgs = this.versionJson.arguments?.jvm || [];
@@ -216,6 +225,10 @@ export class GameLauncher extends EventEmitter {
     return args;
   }
 
+  /**
+   * Build game arguments from version JSON, substituting profile placeholders.
+   * Skips features-related rules (quick play, demo mode) that aren't relevant for this launcher.
+   */
   buildGameArgs(profile) {
     const args = [];
     
@@ -360,6 +373,10 @@ export class GameLauncher extends EventEmitter {
     return args;
   }
 
+  /**
+   * Launch Minecraft: prepareNatives → build args → ensure Java → spawn process.
+   * Resolves when the process exits, rejects if game fails to start.
+   */
   async launch(profile) {
     console.log('[LAUNCHER] Starting launch process...');
     

@@ -122,9 +122,4 @@ export class UserManager {
   getLastUsedUsername() {
     return this.lastUsedUsername;
   }
-
-  getLastUsedProfile() {
-    if (!this.lastUsedUsername) return null;
-    return this.profiles.find(p => p.username === this.lastUsedUsername) || null;
-  }
 }

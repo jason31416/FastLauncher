@@ -5,11 +5,10 @@ import { getMinecraftDir, ensureDir, initMinecraftDir } from './main/utils.js';
 import { UserManager } from './main/userManager.js';
 import { loadSettings, saveSettings, getMinecraftDirFromSettings } from './main/settings.js';
 import { javaManager } from './main/javaManager.js';
-import { vanilla, fabric, awaitProcess, loadAssetCacheIndex, cancel, onProgress, onFileStart, onFileEnd, onRetry, onDownloadProgress, onComplete, getVersionInfo, getVersionJson, getFabricData, setFabricData, setLauncherType, buildFabricVersionJson } from './main/downloaders/index.js';
+import { loadFileCacheIndex, cancel, onProgress, onFileStart, onFileEnd, onRetry, onDownloadProgress, onComplete, getVersionJson, getFabricData, setFabricData, setLauncherType, buildFabricVersionJson } from './main/downloaders/index.js';
 import { checkFullyInstalled, markFullyInstalled } from './main/installStatus.js';
 
-import fs from 'fs/promises';
-import { getCurrentPack, installWithAdapt, testAdapt, getBaseVersion } from './main/adapt.js';
+import { getCurrentPack, installWithAdapt, getBaseVersion } from './main/adapt.js';
 
 Menu.setApplicationMenu(null);
 
@@ -52,7 +51,7 @@ async function startDownload(username, version) {
     
     await ensureDir(getMinecraftDir());
     
-    await loadAssetCacheIndex();
+    await loadFileCacheIndex();
     
     onFileStart(({ workerId, id, path }) => {
       sendToRenderer('file-start', { workerId, id, path });
@@ -160,7 +159,7 @@ async function launchGame(username) {
 }
 
 app.whenReady().then(async () => {
-  const settings = await loadSettings();
+  await loadSettings();
   initMinecraftDir(getMinecraftDirFromSettings());
   
   userManager = new UserManager();

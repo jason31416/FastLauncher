@@ -9,6 +9,7 @@ export { MINECRAFT_VERSION, FABRIC_ENABLED };
 const FABRIC_API_BASE = 'https://meta.fabricmc.net';
 const FABRIC_MAVEN_BASE = 'https://maven.fabricmc.net/';
 
+/** Fetch all available Fabric versions for a given Minecraft version */
 export async function getFabricVersions(mcVersion) {
   const url = `${FABRIC_API_BASE}/v2/versions/loader/${mcVersion}`;
   const response = await fetch(url);
@@ -18,16 +19,22 @@ export async function getFabricVersions(mcVersion) {
   return response.json();
 }
 
+/** Find the latest stable Fabric version, fallback to first available */
 export async function getLatestFabricVersion(mcVersion) {
   const versions = await getFabricVersions(mcVersion);
   return versions.find(v => v.loader.stable === true) || versions[0];
 }
 
+/** Get Fabric version data for a Minecraft version (latest stable) */
 export async function getFabricData(mcVersion) {
   const fabricVersion = await getLatestFabricVersion(mcVersion);
   return fabricVersion;
 }
 
+/**
+ * Build a list of library download items from Fabric metadata.
+ * Includes common libraries, the Fabric loader, and the intermediary JAR.
+ */
 export function buildFabricLibraryItems(fabricData) {
   const items = [];
   const libraries = fabricData.launcherMeta?.libraries?.common || [];
@@ -87,6 +94,10 @@ export function buildFabricLibraryItems(fabricData) {
   return items;
 }
 
+/**
+ * Build a merged version JSON that inherits from vanilla but uses Fabric's mainClass
+ * and includes Fabric libraries in the libraries list.
+ */
 export function buildFabricVersionJson(fabricData, vanillaVersionJson) {
   const fabricVersionId = `${vanillaVersionJson.id}-fabric-${fabricData.loader.version}`;
 
@@ -100,11 +111,6 @@ export function buildFabricVersionJson(fabricData, vanillaVersionJson) {
   merged.mainClass = mainClass?.client || mainClass?.server || 'net.fabricmc.loader.impl.launch.knot.KnotClient';
 
   const fabricLibs = buildFabricLibraryItems(fabricData);
-  const fabricLibNames = new Set(fabricLibs.map(lib => {
-    const parts = lib.path.split('/');
-    const fileName = parts[parts.length - 1];
-    return fileName.replace('.jar', '');
-  }));
 
   merged.libraries = [
     ...(vanillaVersionJson.libraries || []),
@@ -112,7 +118,6 @@ export function buildFabricVersionJson(fabricData, vanillaVersionJson) {
       const parts = lib.path.split('/');
       const fileName = parts[parts.length - 1];
       const version = fileName.replace('.jar', '');
-      const nameParts = lib.id.replace('fabric-', '').split('-');
       return {
         name: version,
         downloads: {
@@ -135,7 +140,11 @@ export function getFabricMainClass(fabricData) {
   return mainClass?.client || mainClass?.server || 'net.fabricmc.loader.impl.launch.knot.KnotClient';
 }
 
-export function getFabricClasspath(fabricData, vanillaVersionJson) {
+/**
+ * Build the classpath entries for Fabric (common libs + loader + intermediary).
+ * Note: Does NOT include vanilla Minecraft libraries - those are handled separately.
+ */
+export function getFabricClasspath(fabricData, _vanillaVersionJson) {
   const classpath = [];
   const libraries = fabricData.launcherMeta?.libraries?.common || [];
 

@@ -105,7 +105,7 @@ onMounted(async () => {
   );
 
   unsubscribers.push(
-      api.onJavaDownloadComplete((data) => {
+      api.onJavaDownloadComplete(() => {
         store.setJavaDownload(false, 100, 'Java 下载完成');
       })
   );
@@ -186,10 +186,6 @@ async function startGame() {
   await loadProfiles();
   store.username = username.value;
   await window.launcherAPI.startDownload(username.value);
-}
-
-async function launchGame() {
-  await window.launcherAPI.launchGame(store.username || username.value);
 }
 
 async function cancelDownload() {

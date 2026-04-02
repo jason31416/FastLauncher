@@ -34,8 +34,8 @@ export const useLauncherStore = defineStore('launcher', () => {
   const hasError = computed(() => state.value === 'error');
   
   const progressPercent = computed(() => {
-    if (progress.value.total === 0) return 0;
-    return Math.round((progress.value.completed / progress.value.total) * 100);
+    if (progress.value.totalSize === 0) return 0;
+    return Math.round((progress.value.downloadedSize / progress.value.totalSize) * 100);
   });
   
   const downloadedMB = computed(() => {

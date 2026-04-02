@@ -1,5 +1,4 @@
 import path from 'path';
-import { getMinecraftDir } from '../utils.js';
 import { addItem } from './queue.js';
 import { setLauncherType } from './index.js';
 import { readVersionJsonCache, writeVersionJsonCache } from '../downloader.js';
@@ -7,6 +6,7 @@ import { readVersionJsonCache, writeVersionJsonCache } from '../downloader.js';
 const FABRIC_API_BASE = 'https://meta.fabricmc.net';
 const FABRIC_MAVEN_BASE = 'https://maven.fabricmc.net/';
 
+/** Stores the resolved Fabric version metadata after download() */
 let _fabricData = null;
 
 export async function download(versionSpec) {
@@ -20,6 +20,10 @@ export async function download(versionSpec) {
   return _fabricData;
 }
 
+/**
+ * Fetch Fabric version metadata from Fabric meta API.
+ * versionSpec can be 'latest' or a specific fabric loader version.
+ */
 async function fetchFabricVersion(mcVersion, fabricVersion) {
   const cacheKey = `fabric-${mcVersion}-${fabricVersion}`;
   const cached = await readVersionJsonCache(cacheKey);
@@ -44,6 +48,7 @@ async function fetchFabricVersion(mcVersion, fabricVersion) {
   return found;
 }
 
+/** Queue Fabric library JARs, loader JAR, and intermediary JAR for download */
 function buildAndQueueFabricDownloads(fabricData) {
   const libraries = fabricData.launcherMeta?.libraries?.common || [];
   for (const lib of libraries) {
@@ -102,6 +107,10 @@ export function setFabricData(data) {
   _fabricData = data;
 }
 
+/**
+ * Build a merged version JSON that inherits from vanilla but uses Fabric's mainClass
+ * and includes Fabric libraries in the classpath.
+ */
 export function buildFabricVersionJson(fabricData, vanillaVersionJson) {
   const fabricVersionId = `${vanillaVersionJson.id}-fabric-${fabricData.loader.version}`;
   const merged = { ...vanillaVersionJson };
