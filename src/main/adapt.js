@@ -1,11 +1,8 @@
 import { vanilla, fabric, awaitProcess, addItem } from './downloaders/index.js';
+import { getCurrentPackId, getCurrentPackName } from './versionManager.js';
 
 let _baseVersion = null;
 
-/**
- * Process a pack installation manifest (adapt) by executing each step sequentially.
- * Steps include: display messages, vanilla/fabric downloads, waiting for downloads, and custom downloads.
- */
 export async function installWithAdapt(adapt, sendToRenderer) {
   if (!adapt?.installation?.length) {
     throw new Error('[ADAPT] Invalid adapt: missing or empty installation array');
@@ -52,20 +49,9 @@ export function getBaseVersion() {
   return _baseVersion;
 }
 
-const testAdapt = {
-        adaptVersion: 2,
-        id: 'example-pack-3-fabric',
-        name: 'Example Pack 3 Fabric',
-        packVersion: '1.0.0',
-        installation: [
-          { type: 'display', message: 'Installing example pack version 1.0.0' },
-          { type: 'installBase', version: '26.1' },
-          { type: 'installFabric', version: '26.1:latest' },
-          { type: 'await' },
-          { type: 'display', message: 'Finished!' },
-        ]
-      };
-
 export function getCurrentPack() {
-    return testAdapt;
+  return {
+    id: getCurrentPackId(),
+    name: getCurrentPackName()
+  };
 }

@@ -23,6 +23,7 @@ const api = {
 
   getInstalledVersions: () => ipcRenderer.invoke('get-installed-versions'),
   getVersionDetails: (versionId) => ipcRenderer.invoke('get-version-details', { versionId }),
+  selectVersion: (versionId) => ipcRenderer.invoke('select-version', { versionId }),
 
   onStateChange: (callback) => {
     const handler = (event, data) => callback(data);

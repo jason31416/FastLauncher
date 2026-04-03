@@ -41,7 +41,9 @@ export const useVersionSelectorStore = defineStore('versionSelector', () => {
     
     selectedVersionId.value = versionId;
     versionDetails.value = null;
+    
     await fetchVersionDetails(versionId);
+    await window.launcherAPI.selectVersion(versionId);
   }
 
   async function fetchVersionDetails(versionId) {

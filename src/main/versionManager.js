@@ -2,6 +2,22 @@ import fs from 'fs/promises';
 import path from 'path';
 import { getBaseDir } from './utils.js';
 
+let currentPackId = null;
+let currentPackName = null;
+
+export function setCurrentPack(id, name) {
+  currentPackId = id;
+  currentPackName = name;
+}
+
+export function getCurrentPackId() {
+  return currentPackId;
+}
+
+export function getCurrentPackName() {
+  return currentPackName;
+}
+
 const STATUS_FILE = 'install_status.json';
 
 async function scanMods(instancePath) {

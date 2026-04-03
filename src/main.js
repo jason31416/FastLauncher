@@ -10,7 +10,7 @@ import { loadFileCacheIndex, cancel, onProgress, onFileStart, onFileEnd, onRetry
 import { checkFullyInstalled, markFullyInstalled } from './main/installStatus.js';
 
 import { getCurrentPack, installWithAdapt, getBaseVersion } from './main/adapt.js';
-import { getInstalledVersions, getVersionDetails } from './main/versionManager.js';
+import { getInstalledVersions, getVersionDetails, getCurrentPackId, getCurrentPackName, setCurrentPack } from './main/versionManager.js';
 
 function getDefaultMinecraftDir() {
   const homeDir = os.homedir();
@@ -58,8 +58,8 @@ function sendToRenderer(channel, data) {
   }
 }
 
-async function startDownload(username, version) {
-  console.log('startDownload called with username:', username, 'version:', version);
+async function startDownload(username) {
+  console.log('startDownload called with username:', username);
   try {
     sendToRenderer('state-change', { state: 'checking', message: '检查版本信息...' });
     
@@ -104,8 +104,7 @@ async function startDownload(username, version) {
         fabricData: getFabricData()
       });
     } else {
-      const pack = getCurrentPack();
-      sendToRenderer('version-info', { id: pack.name || pack.id });
+      sendToRenderer('version-info', { id: getCurrentPackName() || getCurrentPackId() });
     }
 
     sendToRenderer('state-change', { state: 'downloaded', message: '使用已安装版本' });
@@ -176,17 +175,25 @@ async function launchGame(username) {
 }
 
 app.whenReady().then(async () => {
-  await loadSettings();
+  const settings = await loadSettings();
   initMinecraftDir(getMinecraftDirFromSettings());
+  
+  if (settings.lastSelectedVersionId) {
+    setCurrentPack(settings.lastSelectedVersionId, settings.lastSelectedVersionId);
+  }
   
   userManager = new UserManager();
   await userManager.load();
   
   createWindow();
+  
+  if (settings.lastSelectedVersionId) {
+    sendToRenderer('version-info', { id: settings.lastSelectedVersionId, name: settings.lastSelectedVersionId });
+  }
 
   ipcMain.handle('start-download', async (event, { username }) => {
     try {
-      await startDownload(username, getCurrentPack().id);
+      await startDownload(username);
       return { success: true };
     } catch (error) {
       console.error('[START-DOWNLOAD] Error:', error.message);
@@ -220,8 +227,7 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('get-current-pack', () => {
-    const pack = getCurrentPack();
-    return { id: pack.id, name: pack.name };
+    return { id: getCurrentPackId(), name: getCurrentPackName() };
   });
 
   ipcMain.handle('save-settings', async (event, { minecraftDir }) => {
@@ -329,6 +335,17 @@ app.whenReady().then(async () => {
         return { success: false, error: 'Version not found' };
       }
       return { success: false, error: 'Failed to read version data' };
+    }
+  });
+
+  ipcMain.handle('select-version', async (event, { versionId }) => {
+    try {
+      setCurrentPack(versionId, versionId);
+      await saveSettings({ lastSelectedVersionId: versionId });
+      sendToRenderer('version-info', { id: versionId, name: versionId });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
   });
 

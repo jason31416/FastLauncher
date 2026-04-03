@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { platform, arch } from 'os';
-import { getCurrentPack } from './adapt';
+import { getCurrentPackId } from './versionManager.js';
 
 export const BMCLAPI_BASE = 'https://bmclapi2.bangbang93.com';
 export const META_URL = `${BMCLAPI_BASE}/mc/game/version_manifest_v2.json`;
@@ -51,7 +51,7 @@ export function getBaseDir() {
 }
 
 export function getMinecraftDir() {
-  return path.join(getBaseDir(), getCurrentPack().id);
+  return path.join(getBaseDir(), getCurrentPackId());
 }
 
 export async function ensureDir(dir) {

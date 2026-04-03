@@ -84,7 +84,7 @@ watch(() => store.username, () => {
       <div class="mt-30 w-[200px] flex flex-col items-center gap-1">
         <button
             @click="startGame"
-            :disabled="!store.username"
+            :disabled="!store.username || !store.versionInfo?.id"
             class="w-full py-3 text-lg font-semibold bg-blue-400 text-white rounded-lg hover:bg-blue-500 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all duration-400 ease-in-out flex items-center justify-center gap-2"
         >
           <Play :size="16" />
