@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu, dialog } from 'electron';
 import path from 'node:path';
+import os from 'node:os';
 import { GameLauncher, createOfflineProfile } from './main/launcher.js';
 import { getMinecraftDir, ensureDir, initMinecraftDir } from './main/utils.js';
 import { UserManager } from './main/userManager.js';
@@ -9,6 +10,19 @@ import { loadFileCacheIndex, cancel, onProgress, onFileStart, onFileEnd, onRetry
 import { checkFullyInstalled, markFullyInstalled } from './main/installStatus.js';
 
 import { getCurrentPack, installWithAdapt, getBaseVersion } from './main/adapt.js';
+import { getInstalledVersions, getVersionDetails } from './main/versionManager.js';
+
+function getDefaultMinecraftDir() {
+  const homeDir = os.homedir();
+  const p = os.platform();
+  if (p === 'darwin') {
+    return path.join(homeDir, 'Library', 'Application Support', 'minecraft');
+  } else if (p === 'win32') {
+    return path.join(os.env.APPDATA || homeDir, '.minecraft');
+  } else {
+    return path.join(homeDir, '.minecraft');
+  }
+}
 
 Menu.setApplicationMenu(null);
 
@@ -89,6 +103,9 @@ async function startDownload(username, version) {
         fabricEnabled: !!getFabricData(),
         fabricData: getFabricData()
       });
+    } else {
+      const pack = getCurrentPack();
+      sendToRenderer('version-info', { id: pack.name || pack.id });
     }
 
     sendToRenderer('state-change', { state: 'downloaded', message: '使用已安装版本' });
@@ -194,8 +211,17 @@ app.whenReady().then(async () => {
     return getMinecraftDir();
   });
 
+  ipcMain.handle('get-default-minecraft-dir', () => {
+    return getDefaultMinecraftDir();
+  });
+
   ipcMain.handle('get-settings', async () => {
     return await loadSettings();
+  });
+
+  ipcMain.handle('get-current-pack', () => {
+    const pack = getCurrentPack();
+    return { id: pack.id, name: pack.name };
   });
 
   ipcMain.handle('save-settings', async (event, { minecraftDir }) => {
@@ -237,9 +263,10 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('get-profiles', () => {
+    const lastUsedProfile = userManager.getLastUsedProfile();
     return {
       profiles: userManager.getProfiles(),
-      lastUsedUsername: userManager.getLastUsedUsername()
+      lastUsedUsername: lastUsedProfile ? lastUsedProfile.username : null
     };
   });
 
@@ -278,6 +305,30 @@ app.whenReady().then(async () => {
       return { success: true, javaPath };
     } catch (error) {
       return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('get-installed-versions', async () => {
+    try {
+      const versions = await getInstalledVersions();
+      if (versions.length === 0) {
+        return { success: false, error: 'No versions installed' };
+      }
+      return { success: true, versions };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('get-version-details', async (event, { versionId }) => {
+    try {
+      const details = await getVersionDetails(versionId);
+      return { success: true, details };
+    } catch (error) {
+      if (error.message === 'Version not found') {
+        return { success: false, error: 'Version not found' };
+      }
+      return { success: false, error: 'Failed to read version data' };
     }
   });
 

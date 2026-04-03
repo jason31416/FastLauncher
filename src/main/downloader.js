@@ -297,6 +297,7 @@ export class DownloadManager extends EventEmitter {
       const reader = response.body.getReader();
       this.downloadedBytes.set(item.id, 0);
       
+      
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;

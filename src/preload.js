@@ -5,8 +5,10 @@ const api = {
   launchGame: (username) => ipcRenderer.invoke('launch-game', { username }),
   cancelDownload: () => ipcRenderer.invoke('cancel-download'),
   getMinecraftDir: () => ipcRenderer.invoke('get-minecraft-dir'),
+  getDefaultMinecraftDir: () => ipcRenderer.invoke('get-default-minecraft-dir'),
   
   getSettings: () => ipcRenderer.invoke('get-settings'),
+  getCurrentPack: () => ipcRenderer.invoke('get-current-pack'),
   saveSettings: (minecraftDir) => ipcRenderer.invoke('save-settings', { minecraftDir }),
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
   
@@ -18,7 +20,10 @@ const api = {
   deleteProfile: (profileId) => ipcRenderer.invoke('delete-profile', { profileId }),
   renameProfile: (profileId, newUsername) => ipcRenderer.invoke('rename-profile', { profileId, newUsername }),
   selectProfile: (username) => ipcRenderer.invoke('select-profile', { username }),
-  
+
+  getInstalledVersions: () => ipcRenderer.invoke('get-installed-versions'),
+  getVersionDetails: (versionId) => ipcRenderer.invoke('get-version-details', { versionId }),
+
   onStateChange: (callback) => {
     const handler = (event, data) => callback(data);
     ipcRenderer.on('state-change', handler);

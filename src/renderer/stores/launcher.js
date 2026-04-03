@@ -97,6 +97,10 @@ export const useLauncherStore = defineStore('launcher', () => {
     workerStatus.value = newStatus;
   }
   
+  function setUsername(name) {
+    username.value = name;
+  }
+
   function reset() {
     state.value = 'idle';
     message.value = '';
@@ -147,6 +151,7 @@ export const useLauncherStore = defineStore('launcher', () => {
     setCurrentFile,
     setRetryInfo,
     setJavaDownload,
+    setUsername,
     reset
   };
 });

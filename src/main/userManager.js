@@ -23,7 +23,7 @@ export class UserManager {
   constructor() {
     this.profilesPath = getProfilesPath();
     this.profiles = [];
-    this.lastUsedUsername = null;
+    this.lastUsedProfileId = null;
   }
 
   async load() {
@@ -31,13 +31,13 @@ export class UserManager {
       const data = await fs.readFile(this.profilesPath, 'utf-8');
       const parsed = JSON.parse(data);
       this.profiles = parsed.profiles || [];
-      this.lastUsedUsername = parsed.lastUsedUsername || null;
+      this.lastUsedProfileId = parsed.lastUsedProfileId || null;
       console.log('[UserManager] Loaded', this.profiles.length, 'profiles');
     } catch (e) {
       if (e.code === 'ENOENT') {
         console.log('[UserManager] No profiles file, starting fresh');
         this.profiles = [];
-        this.lastUsedUsername = null;
+        this.lastUsedProfileId = null;
       } else {
         console.error('[UserManager] Error loading profiles:', e);
         this.profiles = [];
@@ -50,7 +50,7 @@ export class UserManager {
       await ensureDir(app.getPath('userData'));
       const data = JSON.stringify({
         profiles: this.profiles,
-        lastUsedUsername: this.lastUsedUsername
+        lastUsedProfileId: this.lastUsedProfileId
       }, null, 2);
       await fs.writeFile(this.profilesPath, data, 'utf-8');
       console.log('[UserManager] Saved', this.profiles.length, 'profiles');
@@ -71,9 +71,12 @@ export class UserManager {
       uuid: createUUID(username),
       createdAt: Date.now()
     };
+    // id: 内部管理ID，用于launcher删除/重命名等操作（随机生成，永不变）
+    // uuid: Minecraft游戏UUID，离线模式下由用户名哈希生成（相同用户名→相同UUID）
+    //       未来支持Microsoft账户时，会是Microsoft提供的真实UUID
 
     this.profiles.push(profile);
-    this.lastUsedUsername = username;
+    this.lastUsedProfileId = profile.id;
     await this.save();
     return profile;
   }
@@ -82,8 +85,8 @@ export class UserManager {
     const index = this.profiles.findIndex(p => p.id === profileId);
     if (index !== -1) {
       const deleted = this.profiles.splice(index, 1)[0];
-      if (this.lastUsedUsername === deleted.username) {
-        this.lastUsedUsername = this.profiles.length > 0 ? this.profiles[0].username : null;
+      if (this.lastUsedProfileId === deleted.id) {
+        this.lastUsedProfileId = this.profiles.length > 0 ? this.profiles[0].id : null;
       }
       await this.save();
       return true;
@@ -94,7 +97,7 @@ export class UserManager {
   async selectProfile(username) {
     const profile = this.profiles.find(p => p.username.toLowerCase() === username.toLowerCase());
     if (profile) {
-      this.lastUsedUsername = username;
+      this.lastUsedProfileId = profile.id;
       await this.save();
       return profile;
     }
@@ -106,9 +109,6 @@ export class UserManager {
     if (profile) {
       profile.username = newUsername;
       profile.uuid = createUUID(newUsername);
-      if (this.lastUsedUsername === profile.username) {
-        this.lastUsedUsername = newUsername;
-      }
       await this.save();
       return profile;
     }
@@ -119,7 +119,11 @@ export class UserManager {
     return [...this.profiles];
   }
 
-  getLastUsedUsername() {
-    return this.lastUsedUsername;
+  getLastUsedProfileId() {
+    return this.lastUsedProfileId;
+  }
+
+  getLastUsedProfile() {
+    return this.profiles.find(p => p.id === this.lastUsedProfileId) || null;
   }
 }
